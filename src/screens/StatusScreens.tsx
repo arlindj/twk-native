@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Button, Screen } from '../components/ui';
+import { resetToHome } from '../navigation';
 import { useSession } from '../state/sessionStore';
 import { colors, spacing, type } from '../theme';
 
@@ -28,7 +28,7 @@ export function LinkErrorScreen() {
           label="Back to home"
           onPress={() => {
             reset();
-            router.replace('/');
+            resetToHome();
           }}
         />
       </View>
@@ -50,7 +50,7 @@ export function IncompatibleScreen() {
           label="Back to home"
           onPress={() => {
             reset();
-            router.replace('/');
+            resetToHome();
           }}
         />
       </View>

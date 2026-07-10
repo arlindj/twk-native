@@ -1,5 +1,5 @@
-import Constants from 'expo-constants';
 import { Dimensions, PixelRatio, Platform } from 'react-native';
+import { APP_VERSION as BUILD_VERSION, DEVICE_MODEL, LAUNCH_ID } from '../constants';
 import { create } from 'zustand';
 import * as api from '../api/client';
 import { clearQueue, drain, initQueue, track } from '../events/eventQueue';
@@ -46,14 +46,14 @@ export type Phase =
   | 'upload_failed'
   | 'done';
 
-export const APP_VERSION = Constants.expoConfig?.version ?? '1.0.0';
+export const APP_VERSION = BUILD_VERSION;
 
 export function deviceContext(): DeviceContext {
   const { width, height } = Dimensions.get('screen');
   return {
     platform: Platform.OS === 'ios' ? 'ios' : 'android',
     osVersion: String(Platform.Version),
-    model: Constants.deviceName ?? 'unknown',
+    model: DEVICE_MODEL,
     screenWidth: Math.round(width),
     screenHeight: Math.round(height),
     pixelRatio: PixelRatio.get(),
@@ -155,7 +155,7 @@ export const useSession = create<SessionState>((set, get) => ({
     if (!bootstrap || !sessionId) return;
     track('consent_accepted', { meta: { consentVersion: bootstrap.consent.version } });
     try {
-      await api.acceptConsent(sessionId, bootstrap.consent.version, Constants.sessionId);
+      await api.acceptConsent(sessionId, bootstrap.consent.version, LAUNCH_ID);
     } catch {
       // Consent is also in the event stream; do not block the participant.
     }

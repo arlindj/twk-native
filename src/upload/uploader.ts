@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import { completeRecording, getUploadUrl } from '../api/client';
 import { RecordingCompletePayload } from '../types';
 
@@ -13,6 +13,11 @@ export interface UploadProgress {
   attempt: number;
 }
 
+/** blob-util fs APIs take plain paths, not file:// URIs. */
+function toPath(fileUri: string): string {
+  return fileUri.startsWith('file://') ? decodeURI(fileUri.slice('file://'.length)) : fileUri;
+}
+
 export async function uploadRecording(opts: {
   sessionId: string;
   recordingId: string;
@@ -25,11 +30,20 @@ export async function uploadRecording(opts: {
 }): Promise<RecordingCompletePayload> {
   const { sessionId, recordingId, fileUri, durationMs, width, height, onProgress } = opts;
   const maxAttempts = opts.maxAttempts ?? 4;
+  const path = toPath(fileUri);
 
-  const info = await FileSystem.getInfoAsync(fileUri, { md5: true });
-  if (!info.exists) throw new Error(`Recording file missing: ${fileUri}`);
-  const fileSizeBytes = info.size ?? 0;
-  const checksum = `md5:${info.md5 ?? 'unknown'}`;
+  if (!(await ReactNativeBlobUtil.fs.exists(path))) {
+    throw new Error(`Recording file missing: ${fileUri}`);
+  }
+  const stat = await ReactNativeBlobUtil.fs.stat(path);
+  const fileSizeBytes = Number(stat.size) || 0;
+  let md5 = 'unknown';
+  try {
+    md5 = await ReactNativeBlobUtil.fs.hash(path, 'md5');
+  } catch {
+    /* hash unsupported — checksum stays "unknown" */
+  }
+  const checksum = `md5:${md5}`;
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -38,13 +52,15 @@ export async function uploadRecording(opts: {
       const { uploadUrl, storageKey } = await getUploadUrl(sessionId, recordingId, fileSizeBytes);
 
       onProgress?.({ state: 'uploading', attempt });
-      const res = await FileSystem.uploadAsync(uploadUrl, fileUri, {
-        httpMethod: 'PUT',
-        headers: { 'Content-Type': 'video/mp4' },
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      });
-      if (res.status < 200 || res.status >= 300) {
-        throw new Error(`Storage upload failed with status ${res.status}`);
+      const res = await ReactNativeBlobUtil.fetch(
+        'PUT',
+        uploadUrl,
+        { 'Content-Type': 'video/mp4' },
+        ReactNativeBlobUtil.wrap(path),
+      );
+      const status = res.info().status;
+      if (status < 200 || status >= 300) {
+        throw new Error(`Storage upload failed with status ${status}`);
       }
 
       onProgress?.({ state: 'finalizing', attempt });
@@ -61,12 +77,12 @@ export async function uploadRecording(opts: {
 
       onProgress?.({ state: 'done', attempt });
       // Only now is the local copy safe to delete.
-      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+      await ReactNativeBlobUtil.fs.unlink(path).catch(() => undefined);
       return payload;
     } catch (err) {
       lastError = err;
       onProgress?.({ state: 'failed_retryable', attempt });
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      await new Promise<void>((r) => setTimeout(() => r(), 1000 * 2 ** attempt));
     }
   }
   throw lastError;

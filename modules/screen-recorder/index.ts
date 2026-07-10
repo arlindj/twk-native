@@ -1,15 +1,15 @@
-import { requireNativeModule } from 'expo-modules-core';
+import { NativeModules } from 'react-native';
 
 /**
- * JS bridge for the native screen recorder.
+ * JS bridge for the native screen recorder (plain React Native module,
+ * registered as `ScreenRecorder` on both platforms).
  * iOS: ReplayKit (in-app capture, system permission dialog on start).
  * Android: MediaProjection + foreground service (system consent dialog
  * on every session, as required by the OS).
  *
- * In environments without the native module (Expo Go, web, simulator
- * builds without the module) a mock implementation is returned so the
- * rest of the flow stays testable — recording is simply reported as
- * unavailable.
+ * In environments without the native module a mock implementation is
+ * returned so the rest of the flow stays testable — recording is simply
+ * reported as unavailable.
  */
 
 export interface NativeScreenRecorder {
@@ -20,6 +20,10 @@ export interface NativeScreenRecorder {
   stopRecording(): Promise<string>;
   /** Discards an in-flight recording without producing a file. */
   discardRecording(): Promise<void>;
+  /** Keeps the screen awake while the prototype player is on screen. */
+  setKeepScreenOn(on: boolean): void;
+  /** Native constant: device model identifier (e.g. "iPhone15,2", "Pixel 8"). */
+  deviceModel?: string;
 }
 
 class MockRecorder implements NativeScreenRecorder {
@@ -27,21 +31,20 @@ class MockRecorder implements NativeScreenRecorder {
     return false;
   }
   async startRecording() {
-    throw new Error('Screen recording is not available in this environment (Expo Go / web).');
+    throw new Error('Screen recording is not available in this environment.');
   }
   async stopRecording(): Promise<string> {
-    throw new Error('Screen recording is not available in this environment (Expo Go / web).');
+    throw new Error('Screen recording is not available in this environment.');
   }
   async discardRecording() {
     /* no-op */
   }
+  setKeepScreenOn() {
+    /* no-op */
+  }
 }
 
-let recorder: NativeScreenRecorder;
-try {
-  recorder = requireNativeModule<NativeScreenRecorder>('ScreenRecorder');
-} catch {
-  recorder = new MockRecorder();
-}
+const recorder: NativeScreenRecorder =
+  (NativeModules.ScreenRecorder as NativeScreenRecorder | undefined) ?? new MockRecorder();
 
 export default recorder;

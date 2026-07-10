@@ -1,7 +1,7 @@
-import { router } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Button, Card, Screen } from '../components/ui';
+import { resetToHome } from '../navigation';
 import { useSession } from '../state/sessionStore';
 import { colors, spacing, type } from '../theme';
 
@@ -75,7 +75,7 @@ export function DoneScreen() {
             variant="secondary"
             onPress={() => {
               reset();
-              router.replace('/');
+              resetToHome();
             }}
           />
         </View>

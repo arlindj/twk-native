@@ -1,5 +1,5 @@
-import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../native/secureStore';
+import { randomUUID } from '../utils/crypto';
 import {
   AnswerPayload,
   BootstrapPayload,
@@ -31,11 +31,11 @@ export function getApiBase() {
 
 export async function persistToken(sessionId: string, token: string) {
   sessionToken = token;
-  await SecureStore.setItemAsync('twk_session_token', JSON.stringify({ sessionId, token }));
+  await SecureStore.setItem('twk_session_token', JSON.stringify({ sessionId, token }));
 }
 
 export async function restoreToken(sessionId: string): Promise<boolean> {
-  const raw = await SecureStore.getItemAsync('twk_session_token');
+  const raw = await SecureStore.getItem('twk_session_token');
   if (!raw) return false;
   try {
     const parsed = JSON.parse(raw) as { sessionId: string; token: string };
@@ -53,10 +53,10 @@ export async function restoreToken(sessionId: string): Promise<boolean> {
  * returning tester without ever knowing who they are.
  */
 export async function getGuestParticipantId(): Promise<string> {
-  const existing = await SecureStore.getItemAsync('twk_guest_id');
+  const existing = await SecureStore.getItem('twk_guest_id');
   if (existing) return existing;
-  const id = `guest_${Crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-  await SecureStore.setItemAsync('twk_guest_id', id);
+  const id = `guest_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+  await SecureStore.setItem('twk_guest_id', id);
   return id;
 }
 
@@ -115,7 +115,7 @@ async function request<T>(
     } finally {
       clearTimeout(timer);
     }
-    await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    await new Promise<void>((r) => setTimeout(() => r(), 500 * 2 ** attempt));
   }
   throw lastError;
 }

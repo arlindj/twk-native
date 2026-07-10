@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Crypto from 'expo-crypto';
+import { sha256Hex } from '../utils/crypto';
 import { sendEventBatch } from '../api/client';
 import { SessionEvent, SessionEventType } from '../types';
 
@@ -28,7 +28,8 @@ let appVersion = '1.0.0';
 
 /** Monotonic-ish clock: performance.now is monotonic in Hermes. */
 function nowMonotonic(): number {
-  return globalThis.performance?.now?.() ?? Date.now();
+  const perf = (globalThis as { performance?: { now?: () => number } }).performance;
+  return perf?.now?.() ?? Date.now();
 }
 
 export function sessionElapsedMs(): number {
@@ -106,8 +107,7 @@ export async function flush(): Promise<boolean> {
   try {
     while (state.events.length > 0) {
       const batch = state.events.slice(0, MAX_BATCH);
-      const idempotencyKey = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
+      const idempotencyKey = sha256Hex(
         `${state.sessionId}:${batch[0].eventId}:${batch[batch.length - 1].eventId}`,
       );
       await sendEventBatch(state.sessionId, idempotencyKey, batch);

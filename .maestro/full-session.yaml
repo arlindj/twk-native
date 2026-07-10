@@ -39,6 +39,9 @@ appId: com.tawakkalnaos.participate
 - inputText: "Test User"
 - tapOn: "e.g. 28"
 - inputText: "28"
+# Dismiss the numeric keyboard first — it covers the role chips and the
+# Continue button (tap on a non-interactive label).
+- tapOn: "About you"
 - tapOn: "Product designer"
 - tapOn: "Continue"
 

@@ -26,7 +26,7 @@ Nga dokumentacioni zyrtar i Maze:
 
 ## 1. Testim gjatë zhvillimit (tani, në kompjuterin tënd)
 
-> **E rëndësishme:** Screen recording NUK funksionon në iOS Simulator dhe as në Expo Go.
+> **E rëndësishme:** Screen recording NUK funksionon në iOS Simulator.
 > Duhet telefon real. Simulator-i mjafton vetëm për UI/flow pa recording.
 
 ### 1a. Nis backend-in lokal
@@ -45,7 +45,9 @@ sesionet me video replay + tap markers.
 Kërkesa: Mac me Xcode (e ke ✓), iPhone me kabllo, Apple ID falas.
 
 ```bash
-npx expo run:ios --device
+npm install
+cd ios && pod install && cd ..
+npm run ios -- --device
 ```
 
 > **Nëse `pod install` dështon** me `Encoding::CompatibilityError` (locale jo-UTF-8),
@@ -57,14 +59,14 @@ npx expo run:ios --device
 
 Hapi pas hapi çfarë ndodh dhe çfarë duhet të bësh:
 
-1. Komanda gjeneron projektin native në `ios/` dhe hap listën e pajisjeve — zgjidh iPhone-in tënd.
+1. Komanda ndërton projektin native në `ios/` dhe hap listën e pajisjeve — zgjidh iPhone-in tënd.
 2. Hera e parë do të dështojë signing. Hap `ios/TWKParticipate.xcworkspace` në Xcode →
    selekto projektin **TWKParticipate** → tab **Signing & Capabilities** →
    **Team**: zgjidh Apple ID-në tënde (Add Account nëse s'e ke shtuar) →
    Xcode krijon provisioning profile automatikisht.
 3. Në iPhone: Settings → General → VPN & Device Management → **Trust** zhvilluesin.
 4. Nëse iPhone ka iOS 16+: Settings → Privacy & Security → **Developer Mode** → ON → restart.
-5. Rikthehu në terminal: `npx expo run:ios --device` — tani buildohet dhe instalohet.
+5. Rikthehu në terminal: `npm run ios -- --device` — tani buildohet dhe instalohet.
 
 Shënim: me Apple ID **falas** app-i skadon pas 7 ditësh (ri-build) dhe **Associated
 Domains (universal links) nuk lejohet** — përdor QR-in me `twk://` scheme (dev serveri
@@ -75,7 +77,7 @@ e gjeneron pikërisht ashtu). Me **Apple Developer Program ($99/vit)** hiqen të
 1. Në telefon: Settings → About phone → shtyp 7 herë "Build number" → Developer options → **USB debugging ON**.
 2. Lidhe me kabllo, prano dialogun "Allow USB debugging".
 3. ```bash
-   npx expo run:android
+   npm run android
    ```
    (kërkon Android Studio + SDK të instaluar; nëse s'e ke: `brew install --cask android-studio`,
    hape një herë që të instalojë SDK-në.)
@@ -92,7 +94,7 @@ e gjeneron pikërisht ashtu). Me **Apple Developer Program ($99/vit)** hiqen të
 ### 1e. Vetëm në Simulator (pa recording)
 
 ```bash
-npx expo run:ios          # hap simulator
+npm run ios               # hap simulator
 ```
 Në simulator app-i e detekton që recording s'është i mundur dhe të ofron
 "Continue without recording (dev)" — buton që ekziston vetëm në dev build, kështu që
@@ -121,13 +123,12 @@ taps + answers.
 
 ### iOS — TestFlight (kërkon Apple Developer Program, $99/vit)
 
-Rruga më e lehtë është **EAS Build** (shërbimi cloud i Expo — builda pa konfigurim lokal):
+Build + upload direkt nga Xcode (projekt bare native, pa shërbime cloud):
 
 ```bash
-npm install -g eas-cli
-eas login                        # llogari falas expo.dev
-eas build --platform ios --profile production
-eas submit --platform ios        # e ngarkon direkt në App Store Connect
+open ios/TWKParticipate.xcworkspace
+# Xcode: zgjidh "Any iOS Device (arm64)" → Product → Archive
+# → Organizer → Distribute App → App Store Connect → Upload
 ```
 
 Pastaj në [App Store Connect](https://appstoreconnect.apple.com) → TestFlight:
@@ -141,21 +142,23 @@ instalon TWK Participate. Update-et shkojnë automatikisht.
 ### Android — Google Play Internal Testing (llogari $25 një herë)
 
 ```bash
-eas build --platform android --profile production
-eas submit --platform android
+# një herë: krijo release keystore dhe konfiguroje në android/app/build.gradle
+cd android && ./gradlew bundleRelease
+# ngarko android/app/build/outputs/bundle/release/app-release.aab në Play Console
 ```
 
 Në [Play Console](https://play.google.com/console) → Testing → **Internal testing**:
 deri 100 testera me email ose link opt-in, live për minuta, pa review të plotë.
-Alternativa zero-kosto: `eas build --platform android --profile preview` prodhon **APK**
-që e dërgon me çfarëdo linku — Android e instalon direkt ("install nga burime të panjohura").
+Alternativa zero-kosto: `cd android && ./gradlew assembleRelease` prodhon **APK**
+(`android/app/build/outputs/apk/release/`) që e dërgon me çfarëdo linku — Android e
+instalon direkt ("install nga burime të panjohura").
 
 ### App Review — çfarë do të pyesin (përgatitu)
 
 - **Pse regjistron ekranin?** → Privacy policy + consent screen (e kemi: consent para çdo
   recording, indicator i dukshëm, retention policy në copy). Kjo është pika që Apple/Google
   kontrollojnë më shumë — mos e fshih askund recording-un.
-- iOS `NSCameraUsageDescription` (vetëm për QR scan) — e deklaruar në `app.json`.
+- iOS `NSCameraUsageDescription` (vetëm për QR scan) — e deklaruar në `ios/TWKParticipate/Info.plist`.
 - Android `FOREGROUND_SERVICE_MEDIA_PROJECTION` — deklarim në Play Console Data Safety.
 
 ---
