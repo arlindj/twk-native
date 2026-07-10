@@ -1,0 +1,34 @@
+appId: com.tawakkalnaos.participate
+---
+# App is already inside the prototype player and the prototype has loaded
+# (the runner script polls the backend for the first real frame before
+# invoking this flow).
+- tapOn:
+    point: "10%,17%"
+- extendedWaitUntil:
+    visible: "___never___"
+    timeout: 4000
+    optional: true
+- tapOn:
+    point: "23%,32%"
+- extendedWaitUntil:
+    visible: "___never___"
+    timeout: 4000
+    optional: true
+- tapOn:
+    point: "50%,50%"
+- extendedWaitUntil:
+    visible: "___never___"
+    timeout: 4000
+    optional: true
+- takeScreenshot: interact-final
+- tapOn: "Done?"
+- tapOn: "I completed the task"
+- extendedWaitUntil:
+    visible: "Would you use this app again?"
+    timeout: 10000
+- tapOn: "Yes"
+- tapOn: "Submit answers"
+- extendedWaitUntil:
+    visible: "Thank you!"
+    timeout: 20000

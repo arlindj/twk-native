@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Shop Prototype</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: system-ui; background:#fff; color:#101828; }
+  .screen { display:none; min-height:100vh; flex-direction:column; }
+  .screen.active { display:flex; }
+  header { padding:18px 20px; font-weight:800; font-size:20px; border-bottom:1px solid #eee; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:20px; }
+  .product { border:1px solid #eee; border-radius:14px; overflow:hidden; }
+  .thumb { height:110px; display:flex; align-items:center; justify-content:center; font-size:44px; background:#F2F7F4; }
+  .product p { margin:10px 12px 2px; font-weight:700; }
+  .product span { display:block; margin:0 12px 12px; color:#0B7A4B; font-weight:700; }
+  .detail { padding:20px; flex:1; }
+  .detail .thumb { height:220px; border-radius:16px; font-size:90px; }
+  .btn { display:block; width:calc(100% - 40px); margin:0 20px 20px; padding:16px; border:0;
+    border-radius:12px; background:#0B7A4B; color:#fff; font-size:16px; font-weight:700; }
+  .btn.secondary { background:#fff; color:#101828; border:1px solid #ddd; }
+  .row { display:flex; justify-content:space-between; padding:14px 20px; border-bottom:1px solid #f0f0f0; }
+  input { width:calc(100% - 40px); margin:8px 20px; padding:14px; border:1px solid #ddd; border-radius:10px; font-size:15px; }
+  .success { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+  .success .check { width:84px; height:84px; border-radius:50%; background:#0B7A4B; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:40px; }
+</style>
+</head>
+<body>
+  <div class="screen active" id="home">
+    <header>Shop</header>
+    <div class="grid">
+      <div class="product" onclick="go('detail')"><div class="thumb">🎧</div><p>Headphones</p><span>€79</span></div>
+      <div class="product" onclick="go('detail')"><div class="thumb">⌚️</div><p>Watch</p><span>€129</span></div>
+      <div class="product" onclick="go('detail')"><div class="thumb">📷</div><p>Camera</p><span>€349</span></div>
+      <div class="product" onclick="go('detail')"><div class="thumb">🔊</div><p>Speaker</p><span>€59</span></div>
+    </div>
+  </div>
+
+  <div class="screen" id="detail">
+    <header>Product</header>
+    <div class="detail">
+      <div class="thumb">🎧</div>
+      <h2>Wireless Headphones</h2>
+      <p style="color:#475467">Noise cancelling, 30h battery, fast charge. Free shipping.</p>
+      <h3 style="color:#0B7A4B">€79</h3>
+    </div>
+    <button class="btn" onclick="go('cart')">Add to cart</button>
+    <button class="btn secondary" onclick="go('home')">Back to shop</button>
+  </div>
+
+  <div class="screen" id="cart">
+    <header>Cart</header>
+    <div class="row"><span>Wireless Headphones</span><b>€79</b></div>
+    <div class="row"><span>Shipping</span><b>Free</b></div>
+    <div class="row"><span>Total</span><b>€79</b></div>
+    <div style="flex:1"></div>
+    <button class="btn" onclick="go('checkout')">Checkout</button>
+  </div>
+
+  <div class="screen" id="checkout">
+    <header>Checkout</header>
+    <input placeholder="Full name" />
+    <input placeholder="Address" />
+    <input placeholder="Card number" inputmode="numeric" />
+    <div style="flex:1"></div>
+    <button class="btn" onclick="go('done')">Pay €79</button>
+  </div>
+
+  <div class="screen" id="done">
+    <div class="success">
+      <div class="check">✓</div>
+      <h2>Order confirmed!</h2>
+      <p style="color:#475467">Thanks for shopping with us.</p>
+    </div>
+  </div>
+
+<script>
+  function go(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    // Screen changes are also visible to the native layer via URL hash,
+    // which the WebView reports through onNavigationStateChange.
+    location.hash = id;
+  }
+  // Deep-linkable screens: opening index.html#cart shows the cart directly.
+  // The results dashboard relies on this to render heatmap backgrounds.
+  // A missing hash is normalized to #home so tap analytics always carry a
+  // stable screen id from the very first interaction.
+  (function () {
+    var id = location.hash.replace('#', '');
+    if (id && document.getElementById(id)) go(id);
+    else history.replaceState(null, '', '#home');
+  })();
+</script>
+</body>
+</html>

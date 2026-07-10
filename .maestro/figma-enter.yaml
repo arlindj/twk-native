@@ -1,0 +1,35 @@
+appId: com.tawakkalnaos.participate
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    text: "Cancel"
+    optional: true
+- tapOn: "Paste test link or code"
+- inputText: "twk://t/DEMOFIGMA?api=http://localhost:4000/api"
+- tapOn: "Take a test"
+- tapOn: "Open test"
+- extendedWaitUntil:
+    visible: "Before you start"
+    timeout: 20000
+- tapOn: "I agree — continue"
+- extendedWaitUntil:
+    visible: "About you"
+    timeout: 10000
+- tapOn: "e.g. Sara Ahmed"
+- inputText: "Test User"
+- tapOn: "e.g. 28"
+- inputText: "28"
+- tapOn: "Product designer"
+- tapOn: "Continue"
+- extendedWaitUntil:
+    visible: "Screen recording"
+    timeout: 10000
+- tapOn: "Enable screen recording"
+- tapOn:
+    text: "Continue without recording (dev)"
+    optional: true
+- extendedWaitUntil:
+    visible: "Explore the app"
+    timeout: 10000
+- tapOn: "Start task"

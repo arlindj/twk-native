@@ -1,0 +1,40 @@
+# Capture guest intake screens for the E2E report.
+# Prereqs: server on :4000, Metro running, app installed on booted simulator.
+appId: com.tawakkalnaos.participate
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    text: "Cancel"
+    optional: true
+
+- tapOn: "Paste test link or code"
+- inputText: "twk://t/DEMO123?api=http://192.168.179.232:4000/api"
+- tapOn: "Take a test"
+- tapOn: "Open test"
+
+- extendedWaitUntil:
+    visible: "Before you start"
+    timeout: 30000
+- takeScreenshot: 03-consent
+- tapOn: "I agree — continue"
+
+- extendedWaitUntil:
+    visible: "About you"
+    timeout: 15000
+- takeScreenshot: 03b-intake-empty
+
+- tapOn: "e.g. Sara Ahmed"
+- inputText: "Sara Ahmed"
+- tapOn: "About you"
+- tapOn: "e.g. 28"
+- inputText: "28"
+- tapOn: "About you"
+- tapOn: "Product designer"
+- takeScreenshot: 03c-intake-filled
+- tapOn: "Continue"
+
+- extendedWaitUntil:
+    visible: "Screen recording"
+    timeout: 20000
+- takeScreenshot: 04-permission

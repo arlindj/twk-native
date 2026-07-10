@@ -1,0 +1,121 @@
+# End-to-end participant session against the local dev server.
+# Prereqs: `node server/index.js` (port 4000) and Metro (`npx expo start`)
+# running, app installed on the simulator/device.
+# Run: maestro test .maestro/full-session.yaml
+#
+# Covers: link entry -> session start -> consent -> guest intake ->
+# recording fallback -> task 1 -> task 2 (checkout) -> task question ->
+# post-test questions -> completion. Recording itself needs a real device
+# (see TESTING.md).
+appId: com.tawakkalnaos.participate
+---
+- launchApp:
+    clearState: true
+
+# A stray OS "Open in app?" dialog can linger from a prior deep link; dismiss it.
+- tapOn:
+    text: "Cancel"
+    optional: true
+
+# --- Open the test via manual link entry (deep link path is OS-level) ---
+- tapOn: "Paste test link or code"
+- inputText: "twk://t/DEMO123?api=http://localhost:4000/api"
+# Dismiss the keyboard by tapping a non-interactive label (hideKeyboard is
+# unreliable on iOS with RN TextInput).
+- tapOn: "Take a test"
+- tapOn: "Open test"
+
+# --- Consent ---
+- extendedWaitUntil:
+    visible: "Before you start"
+    timeout: 20000
+- tapOn: "I agree — continue"
+
+# --- Guest intake (name / age / role) for personas ---
+- extendedWaitUntil:
+    visible: "About you"
+    timeout: 10000
+- tapOn: "e.g. Sara Ahmed"
+- inputText: "Test User"
+- tapOn: "e.g. 28"
+- inputText: "28"
+- tapOn: "Product designer"
+- tapOn: "Continue"
+
+# --- Recording permission ---
+# On a device (or an iOS simulator new enough to support ReplayKit) the
+# recording starts and we advance to the task. Where recording is
+# unavailable, a dev-only "Continue without recording" button appears.
+# Handle both without failing.
+- extendedWaitUntil:
+    visible: "Screen recording"
+    timeout: 10000
+- tapOn: "Enable screen recording"
+- tapOn:
+    text: "Continue without recording (dev)"
+    optional: true
+
+# --- Task 1: browse and open a product ---
+- extendedWaitUntil:
+    visible: "Find a product you like"
+    timeout: 10000
+- tapOn: "Start task"
+- extendedWaitUntil:
+    visible: "Headphones"
+    timeout: 20000
+- tapOn: "Headphones"
+- extendedWaitUntil:
+    visible: "Wireless Headphones"
+    timeout: 10000
+- tapOn: "Done?"
+- tapOn: "I completed the task"
+
+# --- Task 2: full checkout ---
+- extendedWaitUntil:
+    visible: "Buy the product"
+    timeout: 10000
+- tapOn: "Start task"
+- extendedWaitUntil:
+    visible: "Headphones"
+    timeout: 20000
+- tapOn: "Headphones"
+- extendedWaitUntil:
+    visible: "Add to cart"
+    timeout: 10000
+- tapOn: "Add to cart"
+- extendedWaitUntil:
+    visible: "Checkout"
+    timeout: 10000
+- tapOn: "Checkout"
+- extendedWaitUntil:
+    visible: "Pay €79"
+    timeout: 10000
+- tapOn: "Pay €79"
+- extendedWaitUntil:
+    visible: "Order confirmed!"
+    timeout: 10000
+- tapOn: "Done?"
+- tapOn: "I completed the task"
+
+# --- Task question: opinion scale ---
+- extendedWaitUntil:
+    visible: "How easy was it to complete the checkout?"
+    timeout: 10000
+- tapOn: "4"
+- tapOn: "Submit answers"
+
+# --- Post-test questions ---
+- extendedWaitUntil:
+    visible: "What would you improve about this app?"
+    timeout: 10000
+- tapOn: "Skip"
+- extendedWaitUntil:
+    visible: "Would you use this app again?"
+    timeout: 10000
+- tapOn: "Yes"
+- tapOn: "Submit answers"
+
+# --- Completion ---
+- extendedWaitUntil:
+    visible: "Thank you!"
+    timeout: 20000
