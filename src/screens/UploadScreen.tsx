@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, Screen } from '../components/ui';
+import { Button, Callout, PageHeader, Screen } from '../components/ui';
 import { resetToHome } from '../navigation';
 import { useSession } from '../state/sessionStore';
 import { colors, spacing, type } from '../theme';
@@ -18,22 +18,26 @@ export function UploadScreen() {
 
   if (phase === 'upload_failed') {
     return (
-      <Screen>
-        <View style={styles.center}>
-          <Text style={[type.h2, { marginBottom: spacing.sm }]}>Upload didn’t finish</Text>
-          <Text style={[type.body, { textAlign: 'center', marginBottom: spacing.xs }]}>
-            Your recording is saved safely on this device — nothing is lost.
-          </Text>
-          {error ? <Text style={[type.caption, { marginBottom: spacing.lg }]}>{error}</Text> : null}
-          <Button label="Retry upload" onPress={() => void retryUpload()} />
-        </View>
+      <Screen footer={<Button label="Retry upload" onPress={() => void retryUpload()} />}>
+        <PageHeader
+          icon="upload-cloud"
+          title="Upload didn’t finish"
+          subtitle="Your recording is saved safely on this device — nothing is lost."
+        />
+        {error ? (
+          <Callout icon="alert-triangle" tone="warning">
+            <Text style={type.caption}>{error}</Text>
+          </Callout>
+        ) : null}
       </Screen>
     );
   }
 
+  const segmentSuffix =
+    progress && progress.totalSegments > 1 ? ` (part ${progress.segment} of ${progress.totalSegments})` : '';
   const label =
     progress?.state === 'uploading'
-      ? 'Uploading your recording…'
+      ? `Uploading your recording${segmentSuffix}…`
       : progress?.state === 'finalizing'
         ? 'Finalizing…'
         : 'Wrapping up your session…';
@@ -54,44 +58,33 @@ export function UploadScreen() {
 export function DoneScreen() {
   const reset = useSession((s) => s.reset);
   return (
-    <Screen>
-      <View style={styles.center}>
-        <View style={styles.check}>
-          <Text style={{ fontSize: 40, color: '#fff' }}>✓</Text>
-        </View>
-        <Text style={[type.h1, { marginTop: spacing.lg }]}>Thank you!</Text>
-        <Text style={[type.body, { textAlign: 'center', marginTop: spacing.sm }]}>
-          Your test session was submitted. You can close the app now.
+    <Screen
+      footer={
+        <Button
+          label="Done"
+          variant="secondary"
+          onPress={() => {
+            reset();
+            resetToHome();
+          }}
+        />
+      }
+    >
+      <PageHeader
+        icon="check-circle"
+        title="Thank you!"
+        subtitle="Your test session was submitted. You can close the app now."
+      />
+      <Callout icon="lock">
+        <Text style={type.caption}>
+          Your recording, taps and answers were sent securely to the research team. Recordings are
+          kept only as long as the study’s retention policy allows.
         </Text>
-        <Card style={{ marginTop: spacing.xl, alignSelf: 'stretch' }}>
-          <Text style={type.caption}>
-            Your recording, taps and answers were sent securely to the research team. Recordings
-            are kept only as long as the study’s retention policy allows.
-          </Text>
-        </Card>
-        <View style={{ alignSelf: 'stretch', marginTop: spacing.lg }}>
-          <Button
-            label="Done"
-            variant="secondary"
-            onPress={() => {
-              reset();
-              resetToHome();
-            }}
-          />
-        </View>
-      </View>
+      </Callout>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md },
-  check: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

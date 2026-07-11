@@ -24,6 +24,7 @@ let flushTimer: ReturnType<typeof setInterval> | null = null;
 let flushing = false;
 let sessionStartMonotonic = 0;
 let recordingStartMonotonic = -1;
+let recordingSegment = -1;
 let appVersion = '1.0.0';
 
 /** Monotonic-ish clock: performance.now is monotonic in Hermes. */
@@ -41,18 +42,22 @@ export function recordingElapsedMs(): number {
   return Math.round(nowMonotonic() - recordingStartMonotonic);
 }
 
-export function markRecordingStarted() {
+/** Anchors the recording clock for a new segment (0-based index). */
+export function markRecordingStarted(segment: number) {
   recordingStartMonotonic = nowMonotonic();
+  recordingSegment = segment;
 }
 
 export function markRecordingStopped() {
   recordingStartMonotonic = -1;
+  recordingSegment = -1;
 }
 
 export async function initQueue(sessionId: string, version: string) {
   appVersion = version;
   sessionStartMonotonic = nowMonotonic();
   recordingStartMonotonic = -1;
+  recordingSegment = -1;
   seq = 0;
 
   // Recover events from a previous crash of the same session.
@@ -93,6 +98,7 @@ export function track(
     type,
     timestampMs: sessionElapsedMs(),
     recordingTimeMs: recordingElapsedMs(),
+    ...(recordingSegment >= 0 ? { recordingSegment } : {}),
     appVersion,
     ...fields,
   };

@@ -120,3 +120,7 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// react-native-vector-icons: bundle only the Feather font (line icons).
+project.ext.vectoricons = [iconFontNames: ["Feather.ttf"]]
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")

@@ -7,10 +7,16 @@ import { RecordingState } from '../types';
  * state machine from the product documentation, and anchors the event
  * timeline (recording_started / recording_stopped) so tap markers can
  * be synchronized with the video during replay.
+ *
+ * Recording is segmented: it covers only the task-testing window, and a
+ * session can produce several segments — recording stops the moment the
+ * participant leaves the app mid-test (privacy) and a fresh segment
+ * starts when they resume. Every segment is a standalone .mp4.
  */
 
 let state: RecordingState = 'idle';
 let startedAtMs = 0;
+let segmentIndex = -1;
 const listeners = new Set<(s: RecordingState) => void>();
 
 function setState(next: RecordingState) {
@@ -20,6 +26,10 @@ function setState(next: RecordingState) {
 
 export function getRecordingState() {
   return state;
+}
+
+export function isRecordingActive() {
+  return state === 'recording';
 }
 
 export function onRecordingState(listener: (s: RecordingState) => void) {
@@ -35,15 +45,19 @@ export async function recorderAvailable(): Promise<boolean> {
   }
 }
 
-/** Starts recording; throws when the user denies the OS permission. */
-export async function startSessionRecording(): Promise<void> {
+/**
+ * Starts a new recording segment; throws when the user denies the OS
+ * permission. `segment` is the 0-based index (segments recorded so far).
+ */
+export async function startSessionRecording(segment: number): Promise<void> {
   setState('preparing');
   try {
     setState('permission_required');
     await ScreenRecorder.startRecording();
     startedAtMs = Date.now();
-    markRecordingStarted();
-    track('recording_started');
+    segmentIndex = segment;
+    markRecordingStarted(segment);
+    track('recording_started', { meta: { segment } });
     setState('recording');
   } catch (err) {
     setState('idle');
@@ -54,17 +68,19 @@ export async function startSessionRecording(): Promise<void> {
 export interface FinishedRecording {
   fileUri: string;
   durationMs: number;
+  segment: number;
 }
 
 export async function stopSessionRecording(): Promise<FinishedRecording> {
   setState('stopping');
+  const segment = segmentIndex;
   try {
     const fileUri = await ScreenRecorder.stopRecording();
     const durationMs = Date.now() - startedAtMs;
-    track('recording_stopped', { meta: { durationMs } });
+    track('recording_stopped', { meta: { durationMs, segment } });
     markRecordingStopped();
     setState('upload_pending');
-    return { fileUri, durationMs };
+    return { fileUri, durationMs, segment };
   } catch (err) {
     markRecordingStopped();
     setState('failed_retryable');
@@ -81,6 +97,8 @@ export async function discardSessionRecording(): Promise<void> {
   }
 }
 
-export function setUploadState(s: Extract<RecordingState, 'uploading' | 'uploaded' | 'failed_retryable' | 'failed_final'>) {
+export function setUploadState(
+  s: Extract<RecordingState, 'uploading' | 'uploaded' | 'failed_retryable' | 'failed_final'>,
+) {
   setState(s);
 }

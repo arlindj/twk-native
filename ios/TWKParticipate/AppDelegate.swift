@@ -62,9 +62,44 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+    // Prefer Metro for live reload, but NEVER show the red "No script URL"
+    // screen: when the packager isn't reachable, fall back to the
+    // main.jsbundle embedded at build time (FORCE_BUNDLING in the
+    // "Bundle React Native code and images" phase guarantees it exists).
+    if let metroURL = RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index"),
+       metroReachable(metroURL) {
+      return metroURL
+    }
+    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #else
     Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
   }
+
+#if DEBUG
+  /// Synchronous ~600ms probe of the Metro /status endpoint.
+  private func metroReachable(_ jsBundleURL: URL) -> Bool {
+    guard var components = URLComponents(url: jsBundleURL, resolvingAgainstBaseURL: false) else {
+      return false
+    }
+    components.path = "/status"
+    components.query = nil
+    guard let statusURL = components.url else { return false }
+
+    var request = URLRequest(url: statusURL)
+    request.timeoutInterval = 0.6
+
+    var reachable = false
+    let semaphore = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: request) { data, response, _ in
+      if let http = response as? HTTPURLResponse, http.statusCode == 200,
+         let data, String(data: data, encoding: .utf8)?.contains("packager-status:running") == true {
+        reachable = true
+      }
+      semaphore.signal()
+    }.resume()
+    _ = semaphore.wait(timeout: .now() + 1.0)
+    return reachable
+  }
+#endif
 }

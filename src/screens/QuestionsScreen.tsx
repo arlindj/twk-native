@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnswerValue, isAnswered, QuestionRenderer } from '../components/questions/QuestionRenderer';
-import { Button, Pill, ProgressBar } from '../components/ui';
+import { Button, ProgressBar, SectionLabel } from '../components/ui';
 import { sessionElapsedMs } from '../events/eventQueue';
 import { useSession } from '../state/sessionStore';
 import { colors, spacing, type } from '../theme';
@@ -63,14 +63,14 @@ export function QuestionsScreen() {
       >
         <ScrollView contentContainerStyle={{ padding: spacing.lg, flexGrow: 1 }}>
           <ProgressBar progress={(index + 1) / (questions.length + 1)} />
-          <Pill
-            label={
-              q.afterTaskId
+          <View style={{ marginTop: spacing.lg }}>
+            <SectionLabel>
+              {q.afterTaskId
                 ? `Question ${index + 1} of ${questions.length}`
-                : `Final questions · ${index + 1}/${questions.length}`
-            }
-          />
-          <Text style={[type.h1, { marginTop: spacing.md }]}>{q.title}</Text>
+                : `Final questions · ${index + 1}/${questions.length}`}
+            </SectionLabel>
+          </View>
+          <Text style={type.h1}>{q.title}</Text>
           {q.description ? (
             <Text style={[type.body, { marginTop: spacing.xs }]}>{q.description}</Text>
           ) : null}

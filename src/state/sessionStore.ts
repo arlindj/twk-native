@@ -1,10 +1,12 @@
 import { Dimensions, PixelRatio, Platform } from 'react-native';
-import { APP_VERSION as BUILD_VERSION, DEVICE_MODEL, LAUNCH_ID } from '../constants';
 import { create } from 'zustand';
+import { APP_VERSION as BUILD_VERSION, DEVICE_MODEL, LAUNCH_ID } from '../constants';
 import * as api from '../api/client';
 import { clearQueue, drain, initQueue, track } from '../events/eventQueue';
 import {
   discardSessionRecording,
+  FinishedRecording,
+  isRecordingActive,
   recorderAvailable,
   setUploadState,
   startSessionRecording,
@@ -25,9 +27,13 @@ import {
  * resolving -> consent -> intake -> permission -> task_intro <-> testing
  * -> questions (per task) -> post_questions -> uploading -> done
  * Error phases: link_error, incompatible, permission_denied, upload_failed.
+ * Interruption: leaving the app mid-test stops the recording segment and
+ * parks the session in `interrupted` until the participant resumes.
  *
- * Testers are guests (no login). Intake collects name / age / role for
- * user personas before recording or tasks begin.
+ * Recording window: only the testing part. The first segment starts when
+ * the participant begins task 1 (that's when the OS consent dialog shows),
+ * and recording stops right after the last task completes — intake,
+ * consent and post-test questions are never recorded.
  */
 export type Phase =
   | 'idle'
@@ -42,6 +48,7 @@ export type Phase =
   | 'testing'
   | 'task_questions'
   | 'post_questions'
+  | 'interrupted'
   | 'uploading'
   | 'upload_failed'
   | 'done';
@@ -70,6 +77,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
   ]);
 }
 
+export interface SegmentedUploadProgress extends UploadProgress {
+  /** 1-based segment being uploaded and the total count. */
+  segment: number;
+  totalSegments: number;
+}
+
 interface SessionState {
   phase: Phase;
   error?: string;
@@ -81,17 +94,24 @@ interface SessionState {
   answers: AnswerPayload[];
   participantProfile?: ParticipantProfile;
   recordingEnabled: boolean;
-  uploadProgress?: UploadProgress;
-  finishedRecording?: { fileUri: string; durationMs: number };
+  /** True while the recorder is starting/stopping a segment. */
+  taskBusy: boolean;
+  uploadProgress?: SegmentedUploadProgress;
+  /** Finished, not-yet-uploaded recording segments (in order). */
+  pendingSegments: FinishedRecording[];
+  /** Phase to return to after an interruption. */
+  interruptedFrom?: Phase;
 
   resolveFromToken: (testToken: string, apiOverride?: string) => Promise<void>;
   acceptConsent: () => Promise<void>;
   submitIntake: (fields: Omit<ParticipantProfile, 'participantId'>) => Promise<void>;
   grantRecording: () => Promise<void>;
   skipRecordingUnavailable: () => void;
-  beginTask: () => void;
-  completeTask: (outcome: 'completed' | 'abandoned') => void;
+  beginTask: () => Promise<void>;
+  completeTask: (outcome: 'completed' | 'abandoned') => Promise<void>;
   submitAnswers: (answers: AnswerPayload[]) => Promise<void>;
+  handleAppState: (next: 'active' | 'background' | 'inactive') => Promise<void>;
+  resumeTest: () => Promise<void>;
   finishSession: () => Promise<void>;
   retryUpload: () => Promise<void>;
   reset: () => void;
@@ -120,9 +140,17 @@ export const useSession = create<SessionState>((set, get) => ({
   pendingQuestions: [],
   answers: [],
   recordingEnabled: false,
+  taskBusy: false,
   participantProfile: undefined,
+  pendingSegments: [],
 
   resolveFromToken: async (testToken, apiOverride) => {
+    // A new deep link can arrive while a session is mid-flight (user
+    // re-scans the QR, taps the link again) — never leak a running
+    // recording into the new session.
+    if (isRecordingActive()) {
+      await discardSessionRecording();
+    }
     set({ phase: 'resolving', error: undefined });
     if (apiOverride) api.setApiBase(apiOverride);
     try {
@@ -138,7 +166,7 @@ export const useSession = create<SessionState>((set, get) => ({
 
       await initQueue(sessionId, APP_VERSION);
       track('session_started');
-      set({ phase: 'consent', bootstrap, sessionId, currentTaskIndex: 0, answers: [] });
+      set({ phase: 'consent', bootstrap, sessionId, currentTaskIndex: 0, answers: [], pendingSegments: [] });
     } catch (err) {
       const message =
         err instanceof api.ApiError
@@ -192,22 +220,26 @@ export const useSession = create<SessionState>((set, get) => ({
     advancePastIntake(set, bootstrap);
   },
 
+  /**
+   * Recording permission checkpoint. The actual OS consent dialog shows
+   * when the first task starts (that's when capture begins) — here we
+   * only verify the device can record and reserve the recording slot.
+   */
   grantRecording: async () => {
     const { sessionId } = get();
     if (!sessionId) return;
     const available = await recorderAvailable();
     if (!available) {
-      // Simulator / Expo Go: recording layer unavailable.
+      // Simulator or device without recording support.
       set({ phase: 'permission_denied', error: 'recording_unavailable' });
       return;
     }
     try {
       await api.startRecordingSlot(sessionId);
-      await startSessionRecording();
-      set({ phase: 'task_intro', recordingEnabled: true });
     } catch {
-      set({ phase: 'permission_denied', error: 'permission_denied' });
+      // Slot reservation also rides the event stream; not fatal.
     }
+    set({ phase: 'task_intro', recordingEnabled: true, error: undefined });
   },
 
   skipRecordingUnavailable: () => {
@@ -215,25 +247,57 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ phase: 'task_intro', recordingEnabled: false });
   },
 
-  beginTask: () => {
-    const { bootstrap, currentTaskIndex } = get();
+  beginTask: async () => {
+    const { bootstrap, currentTaskIndex, recordingEnabled, pendingSegments, taskBusy } = get();
     const task = bootstrap?.tasks[currentTaskIndex];
-    if (!task) return;
+    if (!task || taskBusy) return;
+
+    // First task (or resume after a stop): start a recording segment.
+    // This is the moment the OS consent dialog appears.
+    if (recordingEnabled && !isRecordingActive()) {
+      set({ taskBusy: true });
+      try {
+        await startSessionRecording(pendingSegments.length);
+      } catch {
+        set({ taskBusy: false, phase: 'permission_denied', error: 'permission_denied' });
+        return;
+      }
+      set({ taskBusy: false });
+    }
+
     track('task_started', { taskId: task.id });
     set({ phase: 'testing' });
   },
 
-  completeTask: (outcome) => {
+  completeTask: async (outcome) => {
     const { bootstrap, currentTaskIndex } = get();
     if (!bootstrap) return;
     const task = bootstrap.tasks[currentTaskIndex];
     track(outcome === 'completed' ? 'task_completed' : 'task_abandoned', { taskId: task.id });
 
+    // Last task done — stop recording NOW so post-test questions are
+    // never part of the video.
+    const isLastTask = currentTaskIndex === bootstrap.tasks.length - 1;
+    if (isLastTask && isRecordingActive()) {
+      try {
+        const segment = await withTimeout(
+          stopSessionRecording(),
+          20000,
+          'Recording did not stop in time.',
+        );
+        set({ pendingSegments: [...get().pendingSegments, segment] });
+      } catch {
+        // Segment lost (system-level failure); the session continues —
+        // events and answers are still full evidence.
+        void discardSessionRecording();
+      }
+    }
+
     const taskQuestions = questionsForTask(bootstrap, task.id);
     if (taskQuestions.length > 0) {
       set({ phase: 'task_questions', pendingQuestions: taskQuestions });
     } else {
-      get().submitAnswers([]);
+      await get().submitAnswers([]);
     }
   },
 
@@ -272,39 +336,94 @@ export const useSession = create<SessionState>((set, get) => ({
     }
   },
 
+  /**
+   * App lifecycle. Leaving the app mid-test stops the recording segment
+   * immediately: on Android, MediaProjection would otherwise keep
+   * capturing OTHER apps (privacy), and on iOS ReplayKit freezes anyway.
+   * The session parks in `interrupted` and resumes where it left off.
+   */
+  handleAppState: async (next) => {
+    if (next === 'active') {
+      track('app_foregrounded');
+      return;
+    }
+    if (next !== 'background') return; // 'inactive' = call overlay / shade — recording keeps running
+    track('app_backgrounded');
+
+    const { phase } = get();
+    const midTest = phase === 'testing' || phase === 'task_intro' || phase === 'task_questions';
+    if (!midTest) return;
+
+    track('test_interrupted', { meta: { fromPhase: phase } });
+    if (isRecordingActive()) {
+      try {
+        const segment = await withTimeout(stopSessionRecording(), 10000, 'stop timeout');
+        set({ pendingSegments: [...get().pendingSegments, segment] });
+      } catch {
+        void discardSessionRecording();
+      }
+    }
+    set({ phase: 'interrupted', interruptedFrom: phase });
+  },
+
+  /** Continue after an interruption; a fresh segment starts with the next task screen. */
+  resumeTest: async () => {
+    const { interruptedFrom, recordingEnabled, pendingSegments } = get();
+    const returnTo = interruptedFrom ?? 'task_intro';
+    track('test_resumed', { meta: { toPhase: returnTo } });
+
+    // Mid-task resume needs the recorder running again before the
+    // prototype shows; Android will show the consent dialog again
+    // (OS requirement — one consent per projection session).
+    if (returnTo === 'testing' && recordingEnabled) {
+      try {
+        await startSessionRecording(pendingSegments.length);
+      } catch {
+        set({ phase: 'permission_denied', error: 'permission_denied', interruptedFrom: undefined });
+        return;
+      }
+    }
+    set({ phase: returnTo, interruptedFrom: undefined });
+  },
+
   finishSession: async () => {
-    const { sessionId, recordingEnabled, bootstrap } = get();
+    const { sessionId, bootstrap } = get();
     if (!sessionId || !bootstrap) return;
     set({ phase: 'uploading', uploadProgress: undefined });
 
     try {
-      let finished = get().finishedRecording;
-      if (recordingEnabled && !finished) {
-        // Stopping the native recorder must not hang the session forever;
-        // if it stalls or fails, we surface it as a retryable upload state
-        // rather than leaving the participant on a spinner.
-        finished = await withTimeout(
+      // Safety net — recording should already be stopped by completeTask.
+      if (isRecordingActive()) {
+        const segment = await withTimeout(
           stopSessionRecording(),
           20000,
           'Recording did not stop in time.',
         );
-        set({ finishedRecording: finished });
+        set({ pendingSegments: [...get().pendingSegments, segment] });
       }
-      if (finished) {
+
+      const { width, height } = Dimensions.get('screen');
+      // Upload segments in order; successfully uploaded ones leave the
+      // pending list so a retry never re-uploads them.
+      const totalSegments = get().pendingSegments.length;
+      while (get().pendingSegments.length > 0) {
+        const seg = get().pendingSegments[0];
         setUploadState('uploading');
-        const { width, height } = Dimensions.get('screen');
         await uploadRecording({
           sessionId,
-          recordingId: `rec_${sessionId}`,
-          fileUri: finished.fileUri,
-          durationMs: finished.durationMs,
+          recordingId: `rec_${sessionId}_s${seg.segment}`,
+          fileUri: seg.fileUri,
+          durationMs: seg.durationMs,
+          segment: seg.segment,
           width: Math.round(width * PixelRatio.get()),
           height: Math.round(height * PixelRatio.get()),
-          onProgress: (p) => set({ uploadProgress: p }),
+          onProgress: (p) =>
+            set({ uploadProgress: { ...p, segment: seg.segment + 1, totalSegments } }),
         });
-        setUploadState('uploaded');
-        track('recording_uploaded');
+        set({ pendingSegments: get().pendingSegments.slice(1) });
+        track('recording_uploaded', { meta: { segment: seg.segment } });
       }
+      setUploadState('uploaded');
 
       track('session_completed');
       await drain();
@@ -337,8 +456,10 @@ export const useSession = create<SessionState>((set, get) => ({
       answers: [],
       participantProfile: undefined,
       recordingEnabled: false,
+      taskBusy: false,
       uploadProgress: undefined,
-      finishedRecording: undefined,
+      pendingSegments: [],
+      interruptedFrom: undefined,
     });
   },
 }));

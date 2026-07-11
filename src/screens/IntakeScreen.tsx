@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Card, Pill } from '../components/ui';
+import { Button, PageHeader, Pill } from '../components/ui';
 import { useSession } from '../state/sessionStore';
 import { colors, radius, spacing, type } from '../theme';
 
@@ -67,15 +67,22 @@ export function IntakeScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          // Keeps the focused input above the keyboard; drag dismisses the
+          // number-pad (which has no return key) so the role chips + footer
+          // stay reachable.
+          automaticallyAdjustKeyboardInsets
+          keyboardDismissMode="on-drag"
         >
-          <Pill label={bootstrap.studyName} />
-          <Text style={[type.h1, { marginTop: spacing.md }]}>About you</Text>
-          <Text style={[type.body, { marginTop: spacing.sm }]}>
-            No account needed. Tell us a bit about yourself so we can understand who took this
-            test.
-          </Text>
+          <Pill label={bootstrap.studyName} tone="muted" />
+          <View style={{ marginTop: spacing.md }}>
+            <PageHeader
+              icon="user"
+              title="About you"
+              subtitle="No account needed. Tell us a bit about yourself so we can understand who took this test."
+            />
+          </View>
 
-          <Card style={{ marginTop: spacing.lg, gap: spacing.lg }}>
+          <View style={{ gap: spacing.lg }}>
             {intake.askFullName ? (
               <Field label="Full name" required>
                 <TextInput
@@ -166,7 +173,7 @@ export function IntakeScreen() {
                 ) : null}
               </Field>
             ) : null}
-          </Card>
+          </View>
         </ScrollView>
 
         <View style={styles.footer}>
@@ -194,9 +201,10 @@ function Field({
   required?: boolean;
   children: React.ReactNode;
 }) {
+  // Small gray label above the input, not a bold heading.
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={type.h3}>
+      <Text style={styles.fieldLabel}>
         {label}
         {required ? <Text style={{ color: colors.brand }}> *</Text> : null}
       </Text>
@@ -208,22 +216,28 @@ function Field({
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: spacing.lg, paddingBottom: spacing.md },
-  footer: { padding: spacing.lg, paddingTop: 0 },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+  },
+  fieldLabel: { fontSize: 13, fontWeight: '500', color: colors.inkMuted },
   input: {
-    minHeight: 48,
-    borderWidth: 1,
-    borderColor: colors.line,
+    // Soft gray fill, no border, generous padding.
+    minHeight: 50,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 12,
     fontSize: 16,
     color: colors.ink,
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
   },
   hint: { ...type.caption, color: colors.danger },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
     backgroundColor: colors.card,
     borderRadius: radius.pill,

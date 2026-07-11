@@ -44,7 +44,14 @@ class MockRecorder implements NativeScreenRecorder {
   }
 }
 
-const recorder: NativeScreenRecorder =
-  (NativeModules.ScreenRecorder as NativeScreenRecorder | undefined) ?? new MockRecorder();
+const native = NativeModules.ScreenRecorder as NativeScreenRecorder | undefined;
+if (__DEV__) {
+  // Diagnostic: distinguishes "native module missing" (mock fallback) from
+  // "recording unavailable on this device" — the two look identical in the UI.
+  console.log(
+    `[ScreenRecorder] native module ${native ? `bridged (deviceModel=${native.deviceModel})` : 'MISSING — using mock'}`,
+  );
+}
+const recorder: NativeScreenRecorder = native ?? new MockRecorder();
 
 export default recorder;

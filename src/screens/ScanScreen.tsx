@@ -1,6 +1,6 @@
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Linking, StyleSheet, Text, View } from 'react-native';
 import {
   Camera,
   useCameraDevice,
@@ -18,6 +18,9 @@ export function ScanScreen() {
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
   const [invalid, setInvalid] = useState(false);
+  // Request returned false — the OS won't show the dialog again
+  // ("don't ask again" / previously denied); only Settings can fix it.
+  const [blocked, setBlocked] = useState(false);
   const handled = useRef(false);
 
   useEffect(() => {
@@ -49,10 +52,22 @@ export function ScanScreen() {
         <View style={{ flex: 1, justifyContent: 'center' }}>
           <Text style={[type.h2, { marginBottom: spacing.sm }]}>Camera access</Text>
           <Text style={[type.body, { marginBottom: spacing.lg }]}>
-            The camera is only used to scan your test QR code. Nothing is photographed or stored.
+            {blocked
+              ? 'Camera access is blocked for this app. Enable it in Settings, or go back and paste the test link manually — scanning is optional.'
+              : 'The camera is only used to scan your test QR code. Nothing is photographed or stored. You can also paste the test link manually instead.'}
           </Text>
-          <Button label="Allow camera" onPress={() => void requestPermission()} />
-          <Button label="Back" variant="ghost" onPress={() => navigation.goBack()} />
+          {blocked ? (
+            <Button label="Open Settings" onPress={() => void Linking.openSettings()} />
+          ) : (
+            <Button
+              label="Allow camera"
+              onPress={async () => {
+                const granted = await requestPermission();
+                if (!granted) setBlocked(true);
+              }}
+            />
+          )}
+          <Button label="Enter link manually" variant="ghost" onPress={() => navigation.goBack()} />
         </View>
       </Screen>
     );

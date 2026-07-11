@@ -99,8 +99,24 @@ class ScreenRecordService : Service() {
     }
   }
 
+  /**
+   * Removes session files left behind by a crashed/killed app. Only files
+   * older than 6h are touched — segments of the current session that are
+   * still waiting for upload must survive.
+   */
+  private fun cleanupStaleRecordings() {
+    val cutoff = System.currentTimeMillis() - 6 * 3600 * 1000
+    cacheDir.listFiles()?.forEach { f ->
+      if (f.name.startsWith("twk-session-") && f.name.endsWith(".mp4")) {
+        val stamp = f.name.removePrefix("twk-session-").removeSuffix(".mp4").toLongOrNull()
+        if (stamp != null && stamp < cutoff) f.delete()
+      }
+    }
+  }
+
   private fun startRecording(resultCode: Int, resultData: Intent) {
     try {
+      cleanupStaleRecordings()
       val projectionManager =
         getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
       val projection = projectionManager.getMediaProjection(resultCode, resultData)

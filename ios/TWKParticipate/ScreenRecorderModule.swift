@@ -44,11 +44,29 @@ class ScreenRecorder: NSObject {
     #endif
   }
 
+  /// Removes session files left behind by a crashed/killed app. Only
+  /// files older than 6h are touched — segments of the current session
+  /// that are still waiting for upload must survive.
+  private func cleanupStaleRecordings() {
+    let fm = FileManager.default
+    let tmp = fm.temporaryDirectory
+    guard let files = try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil) else { return }
+    let cutoff = Date().timeIntervalSince1970 - 6 * 3600
+    for url in files where url.lastPathComponent.hasPrefix("twk-session-") {
+      let stamp = url.deletingPathExtension().lastPathComponent
+        .replacingOccurrences(of: "twk-session-", with: "")
+      if let epoch = Double(stamp), epoch < cutoff {
+        try? fm.removeItem(at: url)
+      }
+    }
+  }
+
   @objc(startRecording:rejecter:)
   func startRecording(
     _ resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
+    cleanupStaleRecordings()
     guard recorder.isAvailable else {
       reject("E_UNAVAILABLE", "Screen recording is not available on this device.", nil)
       return

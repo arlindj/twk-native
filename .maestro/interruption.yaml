@@ -1,0 +1,81 @@
+# Interruption/resume path: participant leaves the app mid-task, comes
+# back, sees "Test paused" and continues where they left off.
+# On the simulator recording is unavailable (dev skip path), so this
+# exercises the phase machine — segment stop/restart itself needs a
+# real device.
+# Run: maestro test .maestro/interruption.yaml
+appId: com.tawakkalnaos.participate
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    text: "Cancel"
+    optional: true
+
+- tapOn: "Enter link manually"
+- tapOn: "Paste test link or code"
+- inputText: "twk://t/DEMO123?api=http://localhost:4000/api"
+- pressKey: Enter
+
+- extendedWaitUntil:
+    visible: "Before you start"
+    timeout: 20000
+- tapOn: "I agree — continue"
+
+- extendedWaitUntil:
+    visible: "About you"
+    timeout: 10000
+- tapOn: "e.g. Sara Ahmed"
+- inputText: "Interrupt Tester"
+- pressKey: Enter
+- tapOn: "e.g. 28"
+- inputText: "31"
+- scrollUntilVisible:
+    element:
+      text: "Product designer"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Product designer"
+- tapOn: "Continue"
+
+- extendedWaitUntil:
+    visible: "Screen recording"
+    timeout: 10000
+- tapOn: "Enable screen recording"
+- tapOn:
+    text: "Continue without recording (dev)"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Find a product you like"
+    timeout: 10000
+- tapOn: "Start task"
+- extendedWaitUntil:
+    visible: "Headphones"
+    timeout: 20000
+
+# --- Leave the app mid-task (Safari foregrounds, app backgrounds) ---
+- openLink: https://example.com
+- extendedWaitUntil:
+    visible: "Example Domain"
+    timeout: 20000
+
+# --- Come back (must NOT kill the process — resume, not restart) ---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible: "Test paused"
+    timeout: 10000
+- assertVisible: "You left the app, so the test was paused."
+- tapOn: "Continue test"
+
+# --- Back in the prototype, same task ---
+- extendedWaitUntil:
+    visible: "Headphones"
+    timeout: 20000
+- tapOn: "Headphones"
+- extendedWaitUntil:
+    visible: "Wireless Headphones"
+    timeout: 10000
+- tapOn: "Done?"
+- tapOn: "I completed the task"

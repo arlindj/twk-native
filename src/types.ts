@@ -112,6 +112,8 @@ export type SessionEventType =
   | 'question_answered'
   | 'app_backgrounded'
   | 'app_foregrounded'
+  | 'test_interrupted'
+  | 'test_resumed'
   | 'recording_uploaded'
   | 'session_completed';
 
@@ -123,6 +125,12 @@ export interface SessionEvent {
   timestampMs: number;
   /** ms since recording start; -1 when not recording. */
   recordingTimeMs: number;
+  /**
+   * Which recording segment recordingTimeMs is relative to. A session can
+   * have several segments: recording stops when the participant leaves the
+   * app mid-test and a new segment starts when they resume.
+   */
+  recordingSegment?: number;
   taskId?: string;
   /** Tap payload */
   x?: number;
@@ -176,6 +184,8 @@ export interface RecordingCompletePayload {
   recordingId: string;
   storageKey: string;
   durationMs: number;
+  /** 0-based segment index (a session can have several segments). */
+  segment: number;
   checksum: string;
   fileSizeBytes: number;
   width: number;

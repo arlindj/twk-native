@@ -191,7 +191,8 @@ app.post('/api/mobile/sessions/start', (req, res) => {
     participant: null,
     events: [],
     answers: [],
-    recording: null,
+    recordings: [], // uploaded segments (a session can have several)
+    recordingSlot: false,
   });
   res.json({ sessionId, sessionToken: token });
 });
@@ -225,9 +226,9 @@ app.post('/api/mobile/sessions/:id/recording/start', auth, (req, res) => {
   if (!req.session.consent) {
     return res.status(409).json({ code: 'consent_required', message: 'Consent must be recorded first.' });
   }
-  req.session.recording = { recordingId: `rec_${req.session.id}`, status: 'recording' };
+  req.session.recordingSlot = true;
   req.session.status = 'recording';
-  res.json({ recordingId: req.session.recording.recordingId });
+  res.json({ recordingId: `rec_${req.session.id}` });
 });
 
 app.post('/api/mobile/sessions/:id/events/batch', auth, (req, res) => {
@@ -249,9 +250,10 @@ app.post('/api/mobile/sessions/:id/answers', auth, (req, res) => {
 });
 
 app.post('/api/mobile/sessions/:id/recording/upload-url', auth, (req, res) => {
-  const storageKey = `recordings/${req.session.id}.mp4`;
-  req.session.recording = {
-    ...(req.session.recording ?? {}),
+  const recordingId = req.body?.recordingId ?? `rec_${req.session.id}`;
+  const storageKey = `recordings/${req.session.id}_${recordingId}.mp4`;
+  req.session.recordingScratch = {
+    ...(req.session.recordingScratch ?? {}),
     storageKey,
     status: 'upload_pending',
   };
@@ -269,7 +271,11 @@ app.put('/storage/:key', (req, res) => {
 });
 
 app.post('/api/mobile/sessions/:id/recording/complete', auth, (req, res) => {
-  req.session.recording = { ...(req.session.recording ?? {}), ...req.body, status: 'uploaded' };
+  const seg = { ...req.body, status: 'uploaded' };
+  const i = req.session.recordings.findIndex((r) => r.recordingId === seg.recordingId);
+  if (i >= 0) req.session.recordings[i] = seg;
+  else req.session.recordings.push(seg);
+  req.session.recordings.sort((a, b) => (a.segment ?? 0) - (b.segment ?? 0));
   res.json({ ok: true });
 });
 
@@ -376,7 +382,8 @@ app.get('/api/dev/sessions', (_req, res) => {
       eventCount: s.events.length,
       taps: s.events.filter((e) => e.type === 'tap').length,
       answers: s.answers,
-      recording: s.recording,
+      token: s.token,
+      recordings: s.recordings,
       events: s.events,
     })),
   );
@@ -625,32 +632,37 @@ async function load(){
       \${sessionMs ? ' · total <b>' + fmt(sessionMs) + '</b>' : ''}
       \${runs.length ? '<table><tr><th>Task</th><th>Time</th><th>Outcome</th></tr>' +
         runs.map(r => \`<tr><td>\${r.taskId}</td><td>\${fmt(r.durationMs)}</td><td>\${r.outcome}</td></tr>\`).join('') + '</table>' : ''}
-      \${s.recording && s.recording.status === 'uploaded' ? \`
-        <div class="replay" id="replay-\${s.id}" style="margin-top:12px">
-          <video src="/video/\${encodeURIComponent(s.recording.storageKey)}" controls playsinline></video>
-        </div>\` : '<p style="color:#475467;font-size:13px">No recording uploaded (yet).</p>'}
+      \${(s.recordings || []).length ? (s.recordings || []).map((r, ri) => \`
+        <div class="replay" id="replay-\${s.id}-\${ri}" style="margin-top:12px">
+          \${s.recordings.length > 1 ? '<p style="color:#475467;font-size:12px;margin:0 0 4px">Segment ' + (ri + 1) + ' of ' + s.recordings.length + '</p>' : ''}
+          <video src="/video/\${encodeURIComponent(r.storageKey)}" controls playsinline></video>
+        </div>\`).join('') : '<p style="color:#475467;font-size:13px">No recording uploaded (yet).</p>'}
       <details><summary>Answers (\${s.answers.length}) & events</summary>
         <pre>\${JSON.stringify({answers:s.answers, events:s.events.slice(0,200)}, null, 1)}</pre>
       </details>
     </div>\`;
   }).join('');
-  // Tap marker sync on replay: normalizedX/Y * rendered video size, shown within 250ms.
+  // Tap marker sync on replay: recordingTimeMs is relative to its own
+  // segment, so each segment's <video> only gets taps tagged with its index.
   for(const s of sessions){
-    if(!(s.recording && s.recording.status === 'uploaded')) continue;
-    const wrap = document.getElementById('replay-'+s.id);
-    const video = wrap.querySelector('video');
-    const taps = s.events.filter(e => e.type === 'tap' && e.recordingTimeMs >= 0 && e.meta && e.meta.source === 'native');
-    video.addEventListener('timeupdate', () => {
-      wrap.querySelectorAll('.marker').forEach(m => m.remove());
-      const tMs = video.currentTime * 1000;
-      for(const tap of taps){
-        if(Math.abs(tMs - tap.recordingTimeMs) < 250){
-          const m = document.createElement('div');
-          m.className = 'marker';
-          m.style.left = (tap.normalizedX * video.clientWidth) + 'px';
-          m.style.top = (tap.normalizedY * video.clientHeight) + 'px';
-          wrap.appendChild(m);
-        }
+    (s.recordings || []).forEach((r, ri) => {
+      const wrap = document.getElementById('replay-'+s.id+'-'+ri);
+      if(!wrap) return;
+      const video = wrap.querySelector('video');
+      const segIdx = r.segment ?? ri;
+      const taps = s.events.filter(e => e.type === 'tap' && e.recordingTimeMs >= 0 &&
+        (e.recordingSegment ?? 0) === segIdx && e.meta && e.meta.source === 'native');
+      video.addEventListener('timeupdate', () => {
+        wrap.querySelectorAll('.marker').forEach(m => m.remove());
+        const tMs = video.currentTime * 1000;
+        for(const tap of taps){
+          if(Math.abs(tMs - tap.recordingTimeMs) < 250){
+            const m = document.createElement('div');
+            m.className = 'marker';
+            m.style.left = (tap.normalizedX * video.clientWidth) + 'px';
+            m.style.top = (tap.normalizedY * video.clientHeight) + 'px';
+            wrap.appendChild(m);
+          }
       }
     });
   }

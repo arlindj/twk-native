@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Card, Pill } from '../components/ui';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, Callout, ListRow, PageHeader, Pill, SectionLabel } from '../components/ui';
 import { useSession } from '../state/sessionStore';
 import { colors, spacing, type } from '../theme';
 
@@ -18,31 +18,35 @@ export function ConsentScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Pill label={bootstrap.studyName} />
-        <Text style={[type.h1, { marginTop: spacing.md }]}>Before you start</Text>
-        <Text style={[type.body, { marginTop: spacing.sm }]}>
-          You’re about to take part in a usability test. Here’s what will be collected during your
-          session:
-        </Text>
+        <Pill label={bootstrap.studyName} tone="muted" />
+        <View style={{ marginTop: spacing.md }}>
+          <PageHeader
+            icon="file-text"
+            title="Before you start"
+            subtitle="You’re about to take part in a usability test. Here’s what will be collected during your session:"
+          />
+        </View>
 
-        <Card style={{ marginTop: spacing.lg, gap: spacing.md }}>
-          <ConsentRow
+        <SectionLabel>What we collect</SectionLabel>
+        {bootstrap.recordingRequired ? (
+          <ListRow
+            icon="video"
             title="Screen recording"
             body="Only this app’s screen is recorded, from the first task until the end of the test."
-            show={bootstrap.recordingRequired}
           />
-          <ConsentRow title="Taps and gestures" body="Where and when you tap while testing the prototype." show />
-          <ConsentRow title="Your answers" body="Responses to the questions in this study." show />
-          <ConsentRow
-            title="Device info"
-            body="Platform, OS version and screen size — used to make sense of the results."
-            show
-          />
-        </Card>
+        ) : null}
+        <ListRow icon="mouse-pointer" title="Taps and gestures" body="Where and when you tap while testing the prototype." />
+        <ListRow icon="message-circle" title="Your answers" body="Responses to the questions in this study." />
+        <ListRow
+          icon="smartphone"
+          title="Device info"
+          body="Platform, OS version and screen size — used to make sense of the results."
+          last
+        />
 
-        <Card style={{ marginTop: spacing.md, backgroundColor: colors.brandLight, borderColor: colors.brandMuted }}>
+        <Callout icon="lock" tone="brand" style={{ marginTop: spacing.md }}>
           <Text style={[type.body, { color: colors.brandDark }]}>{bootstrap.consent.body}</Text>
-        </Card>
+        </Callout>
       </ScrollView>
 
       <View style={styles.footer}>
@@ -62,28 +66,14 @@ export function ConsentScreen() {
   );
 }
 
-function ConsentRow({ title, body, show }: { title: string; body: string; show: boolean }) {
-  if (!show) return null;
-  return (
-    <View style={{ flexDirection: 'row', gap: spacing.md }}>
-      <View style={styles.dot} />
-      <View style={{ flex: 1 }}>
-        <Text style={type.h3}>{title}</Text>
-        <Text style={type.body}>{body}</Text>
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   scroll: { padding: spacing.lg },
-  footer: { padding: spacing.lg, paddingTop: 0 },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: colors.brand,
-    marginTop: 8,
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
   },
 });

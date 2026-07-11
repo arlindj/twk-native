@@ -18,12 +18,11 @@ appId: com.tawakkalnaos.participate
     optional: true
 
 # --- Open the test via manual link entry (deep link path is OS-level) ---
+- tapOn: "Enter link manually"
 - tapOn: "Paste test link or code"
 - inputText: "twk://t/DEMO123?api=http://localhost:4000/api"
-# Dismiss the keyboard by tapping a non-interactive label (hideKeyboard is
-# unreliable on iOS with RN TextInput).
-- tapOn: "Take a test"
-- tapOn: "Open test"
+# Submit via the return key — onSubmitEditing opens the test.
+- pressKey: Enter
 
 # --- Consent ---
 - extendedWaitUntil:
@@ -37,11 +36,15 @@ appId: com.tawakkalnaos.participate
     timeout: 10000
 - tapOn: "e.g. Sara Ahmed"
 - inputText: "Test User"
+- pressKey: Enter
 - tapOn: "e.g. 28"
 - inputText: "28"
-# Dismiss the numeric keyboard first — it covers the role chips and the
-# Continue button (tap on a non-interactive label).
-- tapOn: "About you"
+# Scroll-drag dismisses the number-pad (no return key) and reveals chips.
+- scrollUntilVisible:
+    element:
+      text: "Product designer"
+    direction: DOWN
+    timeout: 10000
 - tapOn: "Product designer"
 - tapOn: "Continue"
 

@@ -23,12 +23,14 @@ export async function uploadRecording(opts: {
   recordingId: string;
   fileUri: string;
   durationMs: number;
+  /** 0-based recording segment index within the session. */
+  segment: number;
   width: number;
   height: number;
   onProgress?: (p: UploadProgress) => void;
   maxAttempts?: number;
 }): Promise<RecordingCompletePayload> {
-  const { sessionId, recordingId, fileUri, durationMs, width, height, onProgress } = opts;
+  const { sessionId, recordingId, fileUri, durationMs, segment, width, height, onProgress } = opts;
   const maxAttempts = opts.maxAttempts ?? 4;
   const path = toPath(fileUri);
 
@@ -68,6 +70,7 @@ export async function uploadRecording(opts: {
         recordingId,
         storageKey,
         durationMs,
+        segment,
         checksum,
         fileSizeBytes,
         width,

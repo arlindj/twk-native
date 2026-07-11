@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
-import { Button, Screen } from '../components/ui';
+import { Button, Callout, PageHeader, Screen } from '../components/ui';
 import { resetToHome } from '../navigation';
 import { useSession } from '../state/sessionStore';
 import { colors, spacing, type } from '../theme';
@@ -20,10 +20,8 @@ export function LinkErrorScreen() {
   const error = useSession((s) => s.error);
   const reset = useSession((s) => s.reset);
   return (
-    <Screen>
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={[type.h2, { marginBottom: spacing.sm }]}>This test can’t be opened</Text>
-        <Text style={[type.body, { marginBottom: spacing.lg }]}>{error}</Text>
+    <Screen
+      footer={
         <Button
           label="Back to home"
           onPress={() => {
@@ -31,7 +29,54 @@ export function LinkErrorScreen() {
             resetToHome();
           }}
         />
-      </View>
+      }
+    >
+      <PageHeader icon="link" title="This test can’t be opened" />
+      <Callout icon="alert-triangle" tone="warning">
+        <Text style={type.body}>{error}</Text>
+      </Callout>
+    </Screen>
+  );
+}
+
+/**
+ * Shown when the participant left the app mid-test. Recording was
+ * stopped the moment the app went to the background (nothing outside
+ * the test is ever captured); resuming starts a fresh segment.
+ */
+export function InterruptedScreen() {
+  const resumeTest = useSession((s) => s.resumeTest);
+  const recordingEnabled = useSession((s) => s.recordingEnabled);
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Screen
+      footer={
+        <Button
+          label="Continue test"
+          loading={busy}
+          onPress={async () => {
+            setBusy(true);
+            await resumeTest();
+            setBusy(false);
+          }}
+        />
+      }
+    >
+      <PageHeader
+        icon="pause-circle"
+        title="Test paused"
+        subtitle={`You left the app, so the test was paused${
+          recordingEnabled
+            ? ' and the screen recording was stopped — nothing outside this app is ever recorded'
+            : ''
+        }.`}
+      />
+      <Callout icon="play-circle">
+        <Text style={type.body}>
+          You can continue right where you left off.
+          {recordingEnabled ? ' Recording will start again when you continue.' : ''}
+        </Text>
+      </Callout>
     </Screen>
   );
 }
@@ -39,13 +84,8 @@ export function LinkErrorScreen() {
 export function IncompatibleScreen() {
   const reset = useSession((s) => s.reset);
   return (
-    <Screen>
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={[type.h2, { marginBottom: spacing.sm }]}>Not a mobile test</Text>
-        <Text style={[type.body, { marginBottom: spacing.lg }]}>
-          This study was built for desktop and can’t run in the mobile app. Please open the test
-          link on a computer instead.
-        </Text>
+    <Screen
+      footer={
         <Button
           label="Back to home"
           onPress={() => {
@@ -53,7 +93,13 @@ export function IncompatibleScreen() {
             resetToHome();
           }}
         />
-      </View>
+      }
+    >
+      <PageHeader
+        icon="monitor"
+        title="Not a mobile test"
+        subtitle="This study was built for desktop and can’t run in the mobile app. Please open the test link on a computer instead."
+      />
     </Screen>
   );
 }
