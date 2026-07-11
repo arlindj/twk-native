@@ -57,20 +57,32 @@ export function HomeScreen() {
           <Text style={styles.brandName}>TWK Participate</Text>
         </View>
 
-        {/* Hero: calm concentric rings behind a single device mark. */}
+        {/* Hero: calm concentric rings behind a single mark — the mark and
+            copy change with the mode (scan-or-link vs link-only). */}
         <View style={styles.hero}>
           <View style={[styles.ring, styles.ringOuter]} />
           <View style={[styles.ring, styles.ringInner]} />
           <View style={styles.heroMark}>
-            <Feather name="smartphone" size={40} color={colors.brand} />
+            <Feather name={manual ? 'link' : 'smartphone'} size={40} color={colors.brand} />
           </View>
         </View>
 
         <View style={styles.copy}>
-          <Text style={styles.headline}>Your test.{'\n'}Your screen.</Text>
-          <Text style={[type.body, styles.subtitle]}>
-            Scan the QR code from your invitation, or paste your test link to begin.
-          </Text>
+          {manual ? (
+            <>
+              <Text style={styles.headline}>Enter your{'\n'}test link.</Text>
+              <Text style={[type.body, styles.subtitle]}>
+                Paste the test link or code from your invitation.
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.headline}>Your test.{'\n'}Your screen.</Text>
+              <Text style={[type.body, styles.subtitle]}>
+                Scan the QR code from your invitation, or paste your test link to begin.
+              </Text>
+            </>
+          )}
         </View>
 
         <View style={styles.actions}>
