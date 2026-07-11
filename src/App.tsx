@@ -1,7 +1,8 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useState } from 'react';
 import { StatusBar } from 'react-native';
+import { SplashScreen } from './components/SplashScreen';
 import { navigationRef, RootStackParamList } from './navigation';
 import { HomeScreen } from './screens/HomeScreen';
 import { ScanScreen } from './screens/ScanScreen';
@@ -27,6 +28,7 @@ const linking = {
 };
 
 export default function App() {
+  const [splashDone, setSplashDone] = useState(false);
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor={colors.bg} />
@@ -42,6 +44,7 @@ export default function App() {
           <Stack.Screen name="TestRunner" component={TestRunnerScreen} />
         </Stack.Navigator>
       </NavigationContainer>
+      {!splashDone ? <SplashScreen onFinish={() => setSplashDone(true)} /> : null}
     </>
   );
 }
