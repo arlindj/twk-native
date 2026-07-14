@@ -1,8 +1,17 @@
-import { Dimensions, PixelRatio, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Dimensions, PermissionsAndroid, PixelRatio, Platform } from 'react-native';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 import { create } from 'zustand';
 import { APP_VERSION as BUILD_VERSION, DEVICE_MODEL, LAUNCH_ID } from '../constants';
 import * as api from '../api/client';
+import * as SecureStore from '../native/secureStore';
 import { clearQueue, drain, initQueue, track } from '../events/eventQueue';
+import {
+  clearAnswersOutbox,
+  drainAnswers,
+  enqueueAnswers,
+  initAnswersOutbox,
+} from './answersOutbox';
 import {
   discardSessionRecording,
   FinishedRecording,
@@ -12,7 +21,7 @@ import {
   startSessionRecording,
   stopSessionRecording,
 } from '../recording/recorder';
-import { uploadRecording, UploadProgress } from '../upload/uploader';
+import { RecordingFileMissingError, uploadRecording, UploadProgress } from '../upload/uploader';
 import {
   AnswerPayload,
   BootstrapPayload,
@@ -34,6 +43,11 @@ import {
  * the participant begins task 1 (that's when the OS consent dialog shows),
  * and recording stops right after the last task completes — intake,
  * consent and post-test questions are never recorded.
+ *
+ * Crash recovery: a small snapshot (session id, phase, segment file uris)
+ * is persisted on every transition. Re-opening the same test link after a
+ * cold kill restores the session token from the keychain, re-fetches the
+ * bootstrap and resumes instead of minting a duplicate session.
  */
 export type Phase =
   | 'idle'
@@ -55,6 +69,17 @@ export type Phase =
 
 export const APP_VERSION = BUILD_VERSION;
 
+const SNAPSHOT_KEY = 'twk_session_snapshot_v1';
+
+function deviceLocale(): string {
+  try {
+    // Hermes ships Intl on both platforms in RN 0.86.
+    return Intl.DateTimeFormat().resolvedOptions().locale || 'en';
+  } catch {
+    return 'en';
+  }
+}
+
 export function deviceContext(): DeviceContext {
   const { width, height } = Dimensions.get('screen');
   return {
@@ -65,7 +90,7 @@ export function deviceContext(): DeviceContext {
     screenHeight: Math.round(height),
     pixelRatio: PixelRatio.get(),
     appVersion: APP_VERSION,
-    locale: 'en',
+    locale: deviceLocale(),
   };
 }
 
@@ -77,17 +102,58 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
   ]);
 }
 
+/**
+ * Android 13+ drops the recording foreground-service notification unless
+ * the runtime notification permission was granted. Denial is not fatal —
+ * recording works, the persistent indicator is just hidden.
+ */
+async function requestNotificationPermission() {
+  if (Platform.OS !== 'android' || Number(Platform.Version) < 33) return;
+  try {
+    await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+  } catch {
+    /* never block the flow on this */
+  }
+}
+
 export interface SegmentedUploadProgress extends UploadProgress {
   /** 1-based segment being uploaded and the total count. */
   segment: number;
   totalSegments: number;
 }
 
+interface SessionSnapshot {
+  testToken: string;
+  sessionId: string;
+  apiBase: string;
+  phase: Phase;
+  currentTaskIndex: number;
+  recordingEnabled: boolean;
+  pendingSegments: FinishedRecording[];
+  lostSegments: number;
+}
+
+/** Phases worth resuming after a cold kill. */
+const RESUMABLE_PHASES: Phase[] = [
+  'consent',
+  'intake',
+  'permission',
+  'task_intro',
+  'testing',
+  'task_questions',
+  'post_questions',
+  'interrupted',
+  'uploading',
+  'upload_failed',
+];
+
 interface SessionState {
   phase: Phase;
   error?: string;
   bootstrap?: BootstrapPayload;
   sessionId?: string;
+  /** Test token this session was started from — anchors crash recovery. */
+  testToken?: string;
   currentTaskIndex: number;
   /** Questions pending for the current checkpoint (task or post-test). */
   pendingQuestions: QuestionBlock[];
@@ -99,6 +165,8 @@ interface SessionState {
   uploadProgress?: SegmentedUploadProgress;
   /** Finished, not-yet-uploaded recording segments (in order). */
   pendingSegments: FinishedRecording[];
+  /** Segments that could not be saved/uploaded — surfaced to the participant. */
+  lostSegments: number;
   /** Phase to return to after an interruption. */
   interruptedFrom?: Phase;
 
@@ -134,6 +202,47 @@ function postTestQuestions(bootstrap: BootstrapPayload) {
   return bootstrap.questionBlocks.filter((q) => !q.afterTaskId);
 }
 
+function toPath(fileUri: string): string {
+  return fileUri.startsWith('file://') ? decodeURI(fileUri.slice('file://'.length)) : fileUri;
+}
+
+/** Drops snapshot segments whose files did not survive the restart. */
+async function filterExistingSegments(segments: FinishedRecording[]): Promise<FinishedRecording[]> {
+  const out: FinishedRecording[] = [];
+  for (const seg of segments) {
+    if (await ReactNativeBlobUtil.fs.exists(toPath(seg.fileUri)).catch(() => false)) out.push(seg);
+  }
+  return out;
+}
+
+async function readSnapshot(): Promise<SessionSnapshot | null> {
+  try {
+    const raw = await AsyncStorage.getItem(SNAPSHOT_KEY);
+    return raw ? (JSON.parse(raw) as SessionSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistSnapshot(s: SessionState) {
+  if (!s.sessionId || !s.testToken || !RESUMABLE_PHASES.includes(s.phase)) return;
+  const snap: SessionSnapshot = {
+    testToken: s.testToken,
+    sessionId: s.sessionId,
+    apiBase: api.getApiBase(),
+    phase: s.phase === 'interrupted' ? (s.interruptedFrom ?? 'task_intro') : s.phase,
+    currentTaskIndex: s.currentTaskIndex,
+    recordingEnabled: s.recordingEnabled,
+    pendingSegments: s.pendingSegments,
+    lostSegments: s.lostSegments,
+  };
+  void AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+}
+
+function clearSnapshot() {
+  void AsyncStorage.removeItem(SNAPSHOT_KEY);
+}
+
 export const useSession = create<SessionState>((set, get) => ({
   phase: 'idle',
   currentTaskIndex: 0,
@@ -143,6 +252,7 @@ export const useSession = create<SessionState>((set, get) => ({
   taskBusy: false,
   participantProfile: undefined,
   pendingSegments: [],
+  lostSegments: 0,
 
   resolveFromToken: async (testToken, apiOverride) => {
     // A new deep link can arrive while a session is mid-flight (user
@@ -151,8 +261,60 @@ export const useSession = create<SessionState>((set, get) => ({
     if (isRecordingActive()) {
       await discardSessionRecording();
     }
-    set({ phase: 'resolving', error: undefined });
-    if (apiOverride) api.setApiBase(apiOverride);
+    set({ phase: 'resolving', error: undefined, testToken });
+    // The ?api= override is a development affordance. In release builds a
+    // crafted QR must never be able to redirect the evidence stream
+    // (video, name, taps) to an attacker-controlled server.
+    if (apiOverride && __DEV__) api.setApiBase(apiOverride);
+
+    // Cold-restart recovery: same link + a keychain token for the
+    // snapshot's session -> resume it instead of minting a new session.
+    const snap = await readSnapshot();
+    if (
+      snap &&
+      snap.testToken === testToken &&
+      RESUMABLE_PHASES.includes(snap.phase) &&
+      (await api.restoreToken(snap.sessionId))
+    ) {
+      try {
+        if (__DEV__ && snap.apiBase) api.setApiBase(snap.apiBase);
+        const bootstrap = await api.fetchBootstrap(snap.sessionId);
+        await initQueue(snap.sessionId, APP_VERSION);
+        await initAnswersOutbox(snap.sessionId);
+        const pendingSegments = await filterExistingSegments(snap.pendingSegments);
+        const lostSegments = snap.lostSegments + (snap.pendingSegments.length - pendingSegments.length);
+        const task = bootstrap.tasks[snap.currentTaskIndex];
+        const pendingQuestions =
+          snap.phase === 'task_questions' && task
+            ? questionsForTask(bootstrap, task.id)
+            : snap.phase === 'post_questions'
+              ? postTestQuestions(bootstrap)
+              : [];
+        track('test_resumed', { meta: { toPhase: snap.phase, coldStart: true } });
+
+        const midTest = ['task_intro', 'testing', 'task_questions', 'post_questions'].includes(snap.phase);
+        const uploadPhase = snap.phase === 'uploading' || snap.phase === 'upload_failed';
+        set({
+          bootstrap,
+          sessionId: snap.sessionId,
+          testToken,
+          currentTaskIndex: snap.currentTaskIndex,
+          recordingEnabled: snap.recordingEnabled,
+          pendingSegments,
+          lostSegments,
+          pendingQuestions,
+          answers: [],
+          phase: midTest ? 'interrupted' : uploadPhase ? 'upload_failed' : snap.phase,
+          interruptedFrom: midTest ? snap.phase : undefined,
+          error: uploadPhase ? 'The upload was interrupted. Tap retry to finish.' : undefined,
+        });
+        return;
+      } catch {
+        // Expired/invalid session — fall through to a fresh start.
+        clearSnapshot();
+      }
+    }
+
     try {
       const { sessionId, sessionToken } = await api.startSession(testToken, deviceContext());
       await api.persistToken(sessionId, sessionToken);
@@ -163,10 +325,31 @@ export const useSession = create<SessionState>((set, get) => ({
         set({ phase: 'incompatible', bootstrap, sessionId });
         return;
       }
+      // A study without tasks has nothing to run.
+      if (bootstrap.tasks.length === 0) {
+        set({ phase: 'link_error', error: 'This study has no tasks configured yet.' });
+        return;
+      }
+      // Client-side expiry check — do not start evidence collection for a
+      // link the server will 410 halfway through.
+      const expiresAt = Date.parse(bootstrap.expiresAt);
+      if (Number.isFinite(expiresAt) && expiresAt < Date.now()) {
+        set({ phase: 'link_error', error: 'This test link has expired.' });
+        return;
+      }
 
       await initQueue(sessionId, APP_VERSION);
+      await initAnswersOutbox(sessionId);
       track('session_started');
-      set({ phase: 'consent', bootstrap, sessionId, currentTaskIndex: 0, answers: [], pendingSegments: [] });
+      set({
+        phase: 'consent',
+        bootstrap,
+        sessionId,
+        currentTaskIndex: 0,
+        answers: [],
+        pendingSegments: [],
+        lostSegments: 0,
+      });
     } catch (err) {
       const message =
         err instanceof api.ApiError
@@ -174,6 +357,7 @@ export const useSession = create<SessionState>((set, get) => ({
             ? 'This test link has expired.'
             : err.message
           : 'Could not reach the server. Check your connection and try again.';
+      clearSnapshot();
       set({ phase: 'link_error', error: message });
     }
   },
@@ -228,6 +412,7 @@ export const useSession = create<SessionState>((set, get) => ({
   grantRecording: async () => {
     const { sessionId } = get();
     if (!sessionId) return;
+    await requestNotificationPermission();
     const available = await recorderAvailable();
     if (!available) {
       // Simulator or device without recording support.
@@ -242,9 +427,16 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ phase: 'task_intro', recordingEnabled: true, error: undefined });
   },
 
+  /**
+   * Production fallback out of the recording dead end: when the device
+   * cannot record (or the participant keeps denying the OS dialog), the
+   * session continues without video — taps, events and answers are still
+   * full evidence. The session is flagged so the dashboard shows it had
+   * no recording.
+   */
   skipRecordingUnavailable: () => {
-    // Only reachable when the study allows sessions without recording.
-    set({ phase: 'task_intro', recordingEnabled: false });
+    track('recording_skipped', { meta: { reason: get().error ?? 'unknown' } });
+    set({ phase: 'task_intro', recordingEnabled: false, error: undefined });
   },
 
   beginTask: async () => {
@@ -273,6 +465,7 @@ export const useSession = create<SessionState>((set, get) => ({
     const { bootstrap, currentTaskIndex } = get();
     if (!bootstrap) return;
     const task = bootstrap.tasks[currentTaskIndex];
+    if (!task) return;
     track(outcome === 'completed' ? 'task_completed' : 'task_abandoned', { taskId: task.id });
 
     // Last task done — stop recording NOW so post-test questions are
@@ -288,7 +481,12 @@ export const useSession = create<SessionState>((set, get) => ({
         set({ pendingSegments: [...get().pendingSegments, segment] });
       } catch {
         // Segment lost (system-level failure); the session continues —
-        // events and answers are still full evidence.
+        // events and answers are still full evidence. Flag it so the
+        // participant and the dashboard both know.
+        track('recording_discarded', {
+          meta: { segment: get().pendingSegments.length, reason: 'stop_failed' },
+        });
+        set({ lostSegments: get().lostSegments + 1 });
         void discardSessionRecording();
       }
     }
@@ -306,17 +504,22 @@ export const useSession = create<SessionState>((set, get) => ({
     if (!bootstrap || !sessionId) return;
 
     for (const a of newAnswers) {
-      track('question_answered', { taskId: a.taskId, meta: { questionId: a.questionId } });
+      // The full value rides the event stream too — if the answers
+      // endpoint is unreachable for the whole session, nothing is lost.
+      track('question_answered', {
+        taskId: a.taskId,
+        meta: {
+          questionId: a.questionId,
+          answerType: a.type,
+          value: JSON.stringify(a.value).slice(0, 2000),
+        },
+      });
     }
     const all = [...answers, ...newAnswers];
     set({ answers: all });
-    if (newAnswers.length > 0) {
-      try {
-        await api.sendAnswers(sessionId, newAnswers);
-      } catch {
-        // Answers also ride the event stream metadata; retry happens at drain.
-      }
-    }
+    // Durable outbox: persisted before the network attempt, retried on a
+    // timer and drained at session end.
+    await enqueueAnswers(newAnswers);
 
     if (phase === 'post_questions') {
       await get().finishSession();
@@ -360,6 +563,10 @@ export const useSession = create<SessionState>((set, get) => ({
         const segment = await withTimeout(stopSessionRecording(), 10000, 'stop timeout');
         set({ pendingSegments: [...get().pendingSegments, segment] });
       } catch {
+        track('recording_discarded', {
+          meta: { segment: get().pendingSegments.length, reason: 'stop_failed_background' },
+        });
+        set({ lostSegments: get().lostSegments + 1 });
         void discardSessionRecording();
       }
     }
@@ -409,26 +616,46 @@ export const useSession = create<SessionState>((set, get) => ({
       while (get().pendingSegments.length > 0) {
         const seg = get().pendingSegments[0];
         setUploadState('uploading');
-        await uploadRecording({
-          sessionId,
-          recordingId: `rec_${sessionId}_s${seg.segment}`,
-          fileUri: seg.fileUri,
-          durationMs: seg.durationMs,
-          segment: seg.segment,
-          width: Math.round(width * PixelRatio.get()),
-          height: Math.round(height * PixelRatio.get()),
-          onProgress: (p) =>
-            set({ uploadProgress: { ...p, segment: seg.segment + 1, totalSegments } }),
-        });
+        try {
+          await uploadRecording({
+            sessionId,
+            recordingId: `rec_${sessionId}_s${seg.segment}`,
+            fileUri: seg.fileUri,
+            durationMs: seg.durationMs,
+            segment: seg.segment,
+            width: Math.round(width * PixelRatio.get()),
+            height: Math.round(height * PixelRatio.get()),
+            onProgress: (p) =>
+              set({ uploadProgress: { ...p, segment: seg.segment + 1, totalSegments } }),
+          });
+        } catch (err) {
+          if (err instanceof RecordingFileMissingError) {
+            // The file is gone for good (cache evicted / crash orphaned
+            // it) — retrying forever would strand the participant here.
+            track('recording_discarded', {
+              meta: { segment: seg.segment, reason: 'file_missing' },
+            });
+            set({
+              pendingSegments: get().pendingSegments.slice(1),
+              lostSegments: get().lostSegments + 1,
+            });
+            continue;
+          }
+          throw err;
+        }
         set({ pendingSegments: get().pendingSegments.slice(1) });
         track('recording_uploaded', { meta: { segment: seg.segment } });
       }
       setUploadState('uploaded');
 
+      // Answers first (values), then the event stream (their mirror).
+      await drainAnswers();
       track('session_completed');
       await drain();
       await api.completeSession(sessionId);
       await clearQueue();
+      await clearAnswersOutbox();
+      clearSnapshot();
       set({ phase: 'done' });
     } catch (err) {
       setUploadState('failed_retryable');
@@ -446,11 +673,15 @@ export const useSession = create<SessionState>((set, get) => ({
   reset: () => {
     void discardSessionRecording();
     void clearQueue();
+    void clearAnswersOutbox();
+    clearSnapshot();
+    void SecureStore.deleteItem('twk_session_token');
     set({
       phase: 'idle',
       error: undefined,
       bootstrap: undefined,
       sessionId: undefined,
+      testToken: undefined,
       currentTaskIndex: 0,
       pendingQuestions: [],
       answers: [],
@@ -459,7 +690,18 @@ export const useSession = create<SessionState>((set, get) => ({
       taskBusy: false,
       uploadProgress: undefined,
       pendingSegments: [],
+      lostSegments: 0,
       interruptedFrom: undefined,
     });
   },
 }));
+
+// Crash-recovery snapshot: persisted on every relevant transition,
+// removed once the session leaves the resumable window.
+useSession.subscribe((s) => {
+  if (s.phase === 'idle' || s.phase === 'done' || s.phase === 'link_error' || s.phase === 'incompatible') {
+    clearSnapshot();
+    return;
+  }
+  persistSnapshot(s);
+});

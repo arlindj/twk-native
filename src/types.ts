@@ -115,6 +115,10 @@ export type SessionEventType =
   | 'test_interrupted'
   | 'test_resumed'
   | 'recording_uploaded'
+  /** Participant continued without recording after denial/unavailability. */
+  | 'recording_skipped'
+  /** A finished segment was lost (stop failure or missing file). */
+  | 'recording_discarded'
   | 'session_completed';
 
 export interface SessionEvent {

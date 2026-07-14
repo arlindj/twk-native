@@ -36,7 +36,9 @@ class ScreenRecorderModule(private val reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun isAvailable(promise: Promise) {
-    promise.resolve(true)
+    val projectionManager =
+      reactContext.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
+    promise.resolve(projectionManager != null)
   }
 
   @ReactMethod

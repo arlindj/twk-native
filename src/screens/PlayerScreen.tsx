@@ -113,7 +113,11 @@ export function PlayerScreen() {
   const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureBusy = useRef(false);
 
-  const isFrameCaptured = bootstrap?.prototype.type === 'figma_proto';
+  // Frames are captured for EVERY prototype type — heatmaps are built for
+  // all sessions, and the clustered canonical frames double as the heatmap
+  // background images. DOM-based prototypes additionally report screen ids
+  // through the bridge; the backend reconciles both signals.
+  const isFrameCaptured = true;
 
   const doCapture = async () => {
     if (!sessionId || captureBusy.current || !captureAreaRef.current) return;
@@ -155,6 +159,7 @@ export function PlayerScreen() {
 
   if (!bootstrap) return null;
   const task = bootstrap.tasks[index];
+  if (!task) return null;
   const uri = task.startUrl ?? bootstrap.prototype.entryUrl;
 
   return (

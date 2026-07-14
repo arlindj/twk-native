@@ -45,8 +45,19 @@ export function QuestionRenderer({
       );
     case 'yes_no':
       return <YesNo value={typeof value === 'boolean' ? value : undefined} onChange={onChange} />;
+    default:
+      // A newer web builder can ship question types this app version does
+      // not know. Render an explainer instead of a blank screen, and let
+      // isAnswered() treat it as answered so the participant is never stuck.
+      return (
+        <Text style={type.caption}>
+          This question isn’t supported by this app version — tap Next to continue.
+        </Text>
+      );
   }
 }
+
+const KNOWN_TYPES: QuestionBlock['type'][] = ['open_text', 'opinion_scale', 'multiple_choice', 'yes_no'];
 
 function OpenText({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -161,6 +172,8 @@ function YesNo({ value, onChange }: { value?: boolean; onChange: (v: boolean) =>
 }
 
 export function isAnswered(question: QuestionBlock, value: AnswerValue | undefined): boolean {
+  // Unknown question types render as unanswerable info text — never gate on them.
+  if (!KNOWN_TYPES.includes(question.type)) return true;
   if (value === undefined) return false;
   if (question.type === 'open_text') return typeof value === 'string' && value.trim().length > 0;
   if (question.type === 'multiple_choice') return Array.isArray(value) && value.length > 0;

@@ -19,6 +19,7 @@ export function TaskIntroScreen() {
   if (!bootstrap) return null;
 
   const task = bootstrap.tasks[index];
+  if (!task) return null;
   const total = bootstrap.tasks.length;
   const startsRecording = recordingEnabled && index === 0;
 

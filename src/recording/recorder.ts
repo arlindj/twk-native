@@ -17,24 +17,13 @@ import { RecordingState } from '../types';
 let state: RecordingState = 'idle';
 let startedAtMs = 0;
 let segmentIndex = -1;
-const listeners = new Set<(s: RecordingState) => void>();
 
 function setState(next: RecordingState) {
   state = next;
-  listeners.forEach((l) => l(next));
-}
-
-export function getRecordingState() {
-  return state;
 }
 
 export function isRecordingActive() {
   return state === 'recording';
-}
-
-export function onRecordingState(listener: (s: RecordingState) => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
 }
 
 export async function recorderAvailable(): Promise<boolean> {

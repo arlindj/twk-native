@@ -17,17 +17,26 @@
  *
  * Plus a researcher-side page at / with the demo QR code and a replay
  * viewer that syncs tap markers with the uploaded video.
+ *
+ * Persistence is pluggable (see store-memory.js / store-supabase.js):
+ * with SUPABASE_URL + SUPABASE_SECRET_KEY in server/.env it runs against a
+ * real Supabase project (apply supabase/schema.sql once), otherwise it
+ * falls back to the original in-memory + ./uploads behaviour.
  */
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import express from 'express';
-import Jimp from 'jimp';
 import QRCode from 'qrcode';
+import { perceptualHash } from './phash.js';
+import { createMemoryStore } from './store-memory.js';
+import { createSupabaseStore } from './store-supabase.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env'), quiet: true });
+
 const PORT = process.env.PORT || 4000;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const FRAMES_DIR = path.join(UPLOAD_DIR, 'frames');
@@ -156,172 +165,151 @@ function demoBootstrap(sessionId, useFigma) {
   };
 }
 
-/* --------------------------- In-memory DB ------------------------- */
+/* --------------------------- Persistence -------------------------- */
+/* Two interchangeable stores behind one async interface: the original
+   in-memory store, and a Supabase store (Postgres + Storage) that turns
+   on automatically when server/.env carries the project credentials. */
 
-const sessions = new Map(); // sessionId -> session record
-const seenIdempotencyKeys = new Set();
+const SUPABASE_MODE = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
+const store = SUPABASE_MODE
+  ? createSupabaseStore({
+      url: process.env.SUPABASE_URL,
+      secretKey: process.env.SUPABASE_SECRET_KEY,
+      base: BASE,
+    })
+  : createMemoryStore({
+      base: BASE,
+      uploadDir: UPLOAD_DIR,
+      framesDir: FRAMES_DIR,
+      demoBootstrap,
+      demoToken: DEMO_TOKEN,
+      demoFigmaToken: DEMO_FIGMA_TOKEN,
+    });
 
-function auth(req, res, next) {
-  const token = (req.headers.authorization ?? '').replace('Bearer ', '');
-  const session = sessions.get(req.params.id);
-  if (!session || session.token !== token) {
-    return res.status(401).json({ code: 'unauthorized', message: 'Invalid session token.' });
+/** Async route wrapper — store errors carry {status, code}; anything else
+ *  becomes a generic 500 with the same {code, message} body shape. */
+const wrap = (fn) => (req, res) => {
+  Promise.resolve(fn(req, res)).catch((err) => {
+    console.error(`[${req.method} ${req.url}]`, err?.message ?? err);
+    if (res.headersSent) return;
+    const status = Number.isInteger(err?.status) ? err.status : 500;
+    const code = typeof err?.code === 'string' ? err.code : 'internal_error';
+    res.status(status).json({ code, message: err?.message ?? 'Unexpected server error.' });
+  });
+};
+
+async function auth(req, res, next) {
+  try {
+    const token = (req.headers.authorization ?? '').replace('Bearer ', '');
+    const ctx = await store.authenticate(req.params.id, token);
+    if (!ctx) {
+      return res.status(401).json({ code: 'unauthorized', message: 'Invalid session token.' });
+    }
+    req.sessionCtx = ctx;
+    next();
+  } catch (err) {
+    console.error(`[auth ${req.url}]`, err?.message ?? err);
+    res.status(500).json({ code: 'internal_error', message: 'Unexpected server error.' });
   }
-  req.session = session;
-  next();
 }
 
 /* ----------------------------- API ------------------------------- */
 
-app.post('/api/mobile/sessions/start', (req, res) => {
+app.post('/api/mobile/sessions/start', wrap(async (req, res) => {
   const { testToken, device } = req.body ?? {};
-  if (testToken !== DEMO_TOKEN && testToken !== DEMO_FIGMA_TOKEN) {
+  const created = await store.createSession(testToken, device);
+  if (!created) {
     return res.status(410).json({ code: 'expired', message: 'This test link has expired or does not exist.' });
   }
-  const sessionId = `sess_${crypto.randomBytes(6).toString('hex')}`;
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(sessionId, {
-    id: sessionId,
-    token,
-    device,
-    useFigma: testToken === DEMO_FIGMA_TOKEN,
-    status: 'started',
-    startedAt: new Date().toISOString(),
-    consent: null,
-    participant: null,
-    events: [],
-    answers: [],
-    recordings: [], // uploaded segments (a session can have several)
-    recordingSlot: false,
-  });
-  res.json({ sessionId, sessionToken: token });
-});
+  res.json(created); // { sessionId, sessionToken }
+}));
 
-app.get('/api/mobile/sessions/:id/bootstrap', auth, (req, res) => {
-  res.json(demoBootstrap(req.session.id, req.session.useFigma));
-});
+app.get('/api/mobile/sessions/:id/bootstrap', auth, wrap(async (req, res) => {
+  res.json(await store.getBootstrap(req.sessionCtx));
+}));
 
-app.post('/api/mobile/sessions/:id/consent', auth, (req, res) => {
-  req.session.consent = req.body;
+app.post('/api/mobile/sessions/:id/consent', auth, wrap(async (req, res) => {
+  await store.saveConsent(req.sessionCtx.id, req.body);
   res.json({ ok: true });
-});
+}));
 
 /** Guest profile (name / age / role) for user personas — no auth account. */
-app.post('/api/mobile/sessions/:id/participant', auth, (req, res) => {
+app.post('/api/mobile/sessions/:id/participant', auth, wrap(async (req, res) => {
   const { participantId, fullName, age, role } = req.body ?? {};
   if (!participantId || typeof participantId !== 'string') {
     return res.status(400).json({ code: 'bad_participant', message: 'participantId is required.' });
   }
-  req.session.participant = {
+  await store.saveParticipant(req.sessionCtx.id, {
     participantId,
     fullName: typeof fullName === 'string' ? fullName : undefined,
     age: typeof age === 'number' ? age : undefined,
     role: typeof role === 'string' ? role : undefined,
     submittedAt: new Date().toISOString(),
-  };
+  });
   res.json({ ok: true, participantId });
-});
+}));
 
-app.post('/api/mobile/sessions/:id/recording/start', auth, (req, res) => {
-  if (!req.session.consent) {
+app.post('/api/mobile/sessions/:id/recording/start', auth, wrap(async (req, res) => {
+  if (!req.sessionCtx.hasConsent) {
     return res.status(409).json({ code: 'consent_required', message: 'Consent must be recorded first.' });
   }
-  req.session.recordingSlot = true;
-  req.session.status = 'recording';
-  res.json({ recordingId: `rec_${req.session.id}` });
-});
+  await store.startRecording(req.sessionCtx.id);
+  res.json({ recordingId: `rec_${req.sessionCtx.id}` });
+}));
 
-app.post('/api/mobile/sessions/:id/events/batch', auth, (req, res) => {
+app.post('/api/mobile/sessions/:id/events/batch', auth, wrap(async (req, res) => {
   const { idempotencyKey, events } = req.body ?? {};
   if (!idempotencyKey || !Array.isArray(events)) {
     return res.status(400).json({ code: 'bad_batch', message: 'idempotencyKey and events are required.' });
   }
-  if (seenIdempotencyKeys.has(idempotencyKey)) {
-    return res.json({ accepted: 0 }); // duplicate retry — already stored
-  }
-  seenIdempotencyKeys.add(idempotencyKey);
-  req.session.events.push(...events);
-  res.json({ accepted: events.length });
-});
+  const accepted = await store.addEvents(req.sessionCtx.id, idempotencyKey, events);
+  res.json({ accepted });
+}));
 
-app.post('/api/mobile/sessions/:id/answers', auth, (req, res) => {
-  req.session.answers.push(...(req.body?.answers ?? []));
+app.post('/api/mobile/sessions/:id/answers', auth, wrap(async (req, res) => {
+  await store.addAnswers(req.sessionCtx.id, req.body?.answers ?? []);
   res.json({ ok: true });
-});
+}));
 
-app.post('/api/mobile/sessions/:id/recording/upload-url', auth, (req, res) => {
-  const recordingId = req.body?.recordingId ?? `rec_${req.session.id}`;
-  const storageKey = `recordings/${req.session.id}_${recordingId}.mp4`;
-  req.session.recordingScratch = {
-    ...(req.session.recordingScratch ?? {}),
-    storageKey,
-    status: 'upload_pending',
-  };
-  req.session.status = 'uploading';
-  // Production: signed S3/GCS URL. Dev: a local PUT endpoint.
-  res.json({ uploadUrl: `${BASE}/storage/${encodeURIComponent(storageKey)}`, storageKey });
-});
+app.post('/api/mobile/sessions/:id/recording/upload-url', auth, wrap(async (req, res) => {
+  const recordingId = req.body?.recordingId ?? `rec_${req.sessionCtx.id}`;
+  // Memory: a local PUT endpoint. Supabase: a signed Storage upload URL
+  // (accepts the app's raw PUT with Content-Type: video/mp4).
+  const { uploadUrl, storageKey } = await store.createUploadTarget(req.sessionCtx.id, recordingId);
+  res.json({ uploadUrl, storageKey });
+}));
 
-app.put('/storage/:key', (req, res) => {
-  const filePath = path.join(UPLOAD_DIR, req.params.key.replaceAll('/', '_'));
-  const stream = fs.createWriteStream(filePath);
-  req.pipe(stream);
-  stream.on('finish', () => res.status(200).json({ ok: true }));
-  stream.on('error', () => res.status(500).json({ code: 'write_failed', message: 'Could not persist file.' }));
-});
+// Signed-URL stand-in for the in-memory store; Supabase mode uploads
+// straight to Storage, so the route is not mounted there.
+if (!SUPABASE_MODE) {
+  app.put('/storage/:key', (req, res) => {
+    const filePath = path.join(UPLOAD_DIR, req.params.key.replaceAll('/', '_'));
+    const stream = fs.createWriteStream(filePath);
+    req.pipe(stream);
+    stream.on('finish', () => res.status(200).json({ ok: true }));
+    stream.on('error', () => res.status(500).json({ code: 'write_failed', message: 'Could not persist file.' }));
+  });
+}
 
-app.post('/api/mobile/sessions/:id/recording/complete', auth, (req, res) => {
-  const seg = { ...req.body, status: 'uploaded' };
-  const i = req.session.recordings.findIndex((r) => r.recordingId === seg.recordingId);
-  if (i >= 0) req.session.recordings[i] = seg;
-  else req.session.recordings.push(seg);
-  req.session.recordings.sort((a, b) => (a.segment ?? 0) - (b.segment ?? 0));
+app.post('/api/mobile/sessions/:id/recording/complete', auth, wrap(async (req, res) => {
+  await store.completeRecording(req.sessionCtx.id, req.body ?? {});
   res.json({ ok: true });
-});
+}));
 
-app.post('/api/mobile/sessions/:id/complete', auth, (req, res) => {
-  req.session.status = 'completed';
-  req.session.completedAt = new Date().toISOString();
+app.post('/api/mobile/sessions/:id/complete', auth, wrap(async (req, res) => {
+  await store.completeSession(req.sessionCtx.id);
   res.json({ ok: true });
-});
+}));
 
 /* ------------------- Frame capture clustering --------------------
-   Canvas-rendered prototypes (Figma) expose no screen identity, so the
+   Prototypes rendered without stable DOM identity (Figma canvas — and now
+   frame capture runs for ALL prototype types) expose no screen id, so the
    app snapshots the viewport after each tap and uploads it here. Frames
-   are clustered by perceptual hash: visually-identical captures map to
-   one stable screen key, and the first capture becomes that screen's
-   canonical image for heatmap backgrounds. */
-
-const screenRegistry = []; // [{ key, hash (BigUint64-ish bit string), file }]
-
-async function perceptualHash(buffer) {
-  const img = await Jimp.read(buffer);
-  img.resize(16, 16, Jimp.RESIZE_BILINEAR).greyscale();
-  const px = [];
-  for (let y = 0; y < 16; y++) {
-    for (let x = 0; x < 16; x++) {
-      px.push(Jimp.intToRGBA(img.getPixelColor(x, y)).r);
-    }
-  }
-  const mean = px.reduce((a, b) => a + b, 0) / px.length;
-  const variance = px.reduce((a, b) => a + (b - mean) ** 2, 0) / px.length;
-  return {
-    hash: px.map((v) => (v > mean ? '1' : '0')).join(''),
-    // Near-zero variance = uniform image (white page still loading, black
-    // transition frame) — worthless as a screen, must not enter the registry.
-    uniform: Math.sqrt(variance) < 6,
-  };
-}
-
-function hamming(a, b) {
-  let d = 0;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
-  return d;
-}
-
-// 256-bit hash; two captures of the same frame differ only by antialiasing
-// noise (distance < ~25), different frames differ by 60+ in practice.
-const SAME_SCREEN_THRESHOLD = 30;
+   are clustered by perceptual hash (see phash.js): visually-identical
+   captures map to one stable screen key, and the first capture becomes
+   that screen's canonical image for heatmap backgrounds. The store decides
+   where clusters live (memory registry vs. screens/frames tables + the
+   "frames" bucket), keeping hashes cached in memory either way. */
 
 app.post('/api/mobile/sessions/:id/frames', auth, async (req, res) => {
   const { imageBase64, atMs } = req.body ?? {};
@@ -335,59 +323,33 @@ app.post('/api/mobile/sessions/:id/frames', auth, async (req, res) => {
       // Blank/loading frame — tell the app so it can retry shortly.
       return res.json({ screenKey: null, isNew: false, blank: true });
     }
-    let match = null;
-    for (const s of screenRegistry) {
-      if (hamming(s.hash, hash) <= SAME_SCREEN_THRESHOLD) {
-        match = s;
-        break;
-      }
-    }
-    let isNew = false;
-    if (!match) {
-      isNew = true;
-      match = { key: `S${screenRegistry.length + 1}`, hash, file: '' };
-      match.file = path.join(FRAMES_DIR, `${match.key}.jpg`);
-      fs.writeFileSync(match.file, buffer);
-      screenRegistry.push(match);
-    }
-    (req.session.frames ??= []).push({ atMs: atMs ?? 0, screenKey: match.key });
-    res.json({ screenKey: match.key, isNew });
+    const { screenKey, isNew } = await store.recordFrame(req.sessionCtx.id, { hash, buffer, atMs });
+    res.json({ screenKey, isNew });
   } catch (err) {
     res.status(500).json({ code: 'frame_failed', message: String(err?.message ?? err) });
   }
 });
 
-app.get('/frames/:key', (req, res) => {
-  const key = req.params.key.replaceAll('/', '_').replace(/\.jpg$/, '');
-  res.sendFile(path.join(FRAMES_DIR, `${key}.jpg`));
-});
+app.get('/frames/:key', wrap(async (req, res) => {
+  const key = req.params.key.replace(/\.jpg$/, '');
+  const src = await store.getFrameSource(key);
+  if (!src) return res.status(404).json({ code: 'not_found', message: 'Frame not found.' });
+  if (src.url) return res.redirect(src.url); // short-TTL signed Storage URL
+  res.sendFile(src.file);
+}));
 
 /* -------------------- Researcher-side dev pages ------------------- */
 
-app.get('/video/:key', (req, res) => {
-  res.sendFile(path.join(UPLOAD_DIR, req.params.key.replaceAll('/', '_')));
-});
+app.get('/video/:key', wrap(async (req, res) => {
+  const src = await store.getVideoSource(req.params.key);
+  if (!src) return res.status(404).json({ code: 'not_found', message: 'Recording not found.' });
+  if (src.url) return res.redirect(src.url); // short-TTL signed Storage URL
+  res.sendFile(src.file);
+}));
 
-app.get('/api/dev/sessions', (_req, res) => {
-  res.json(
-    [...sessions.values()].map((s) => ({
-      id: s.id,
-      status: s.status,
-      startedAt: s.startedAt,
-      completedAt: s.completedAt,
-      device: s.device,
-      participant: s.participant,
-      useFigma: s.useFigma,
-      frames: s.frames ?? [],
-      eventCount: s.events.length,
-      taps: s.events.filter((e) => e.type === 'tap').length,
-      answers: s.answers,
-      token: s.token,
-      recordings: s.recordings,
-      events: s.events,
-    })),
-  );
-});
+app.get('/api/dev/sessions', wrap(async (_req, res) => {
+  res.json(await store.listSessions());
+}));
 
 app.get('/', async (_req, res) => {
   const deepLink = `twk://t/${DEMO_TOKEN}?api=${encodeURIComponent(`${BASE}/api`)}`;
@@ -671,6 +633,13 @@ load(); setInterval(load, 8000);
 </script>
 </div></body></html>`);
 });
+
+console.log(`TWK dev server — ${SUPABASE_MODE ? 'SUPABASE' : 'IN-MEMORY'} mode${SUPABASE_MODE ? ` (${process.env.SUPABASE_URL})` : ' (no SUPABASE_URL/SUPABASE_SECRET_KEY in server/.env)'}`);
+try {
+  await store.init();
+} catch (err) {
+  console.warn(`  ! Store init failed (continuing anyway): ${err?.message ?? err}`);
+}
 
 app.listen(PORT, () => {
   console.log(`TWK dev server running:`);

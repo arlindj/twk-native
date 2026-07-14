@@ -13,6 +13,17 @@ export interface UploadProgress {
   attempt: number;
 }
 
+/**
+ * The local segment file no longer exists (OS evicted the cache, or a
+ * crash orphaned it). Retrying can never succeed — callers must drop
+ * the segment and move on instead of looping forever.
+ */
+export class RecordingFileMissingError extends Error {
+  constructor(fileUri: string) {
+    super(`Recording file missing: ${fileUri}`);
+  }
+}
+
 /** blob-util fs APIs take plain paths, not file:// URIs. */
 function toPath(fileUri: string): string {
   return fileUri.startsWith('file://') ? decodeURI(fileUri.slice('file://'.length)) : fileUri;
@@ -35,7 +46,7 @@ export async function uploadRecording(opts: {
   const path = toPath(fileUri);
 
   if (!(await ReactNativeBlobUtil.fs.exists(path))) {
-    throw new Error(`Recording file missing: ${fileUri}`);
+    throw new RecordingFileMissingError(fileUri);
   }
   const stat = await ReactNativeBlobUtil.fs.stat(path);
   const fileSizeBytes = Number(stat.size) || 0;

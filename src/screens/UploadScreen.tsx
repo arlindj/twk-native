@@ -57,6 +57,7 @@ export function UploadScreen() {
 
 export function DoneScreen() {
   const reset = useSession((s) => s.reset);
+  const lostSegments = useSession((s) => s.lostSegments);
   return (
     <Screen
       footer={
@@ -75,6 +76,15 @@ export function DoneScreen() {
         title="Thank you!"
         subtitle="Your test session was submitted. You can close the app now."
       />
+      {lostSegments > 0 ? (
+        <Callout icon="alert-triangle" tone="warning">
+          <Text style={type.caption}>
+            {lostSegments === 1
+              ? 'One part of the screen recording could not be saved, but your taps and answers were submitted in full.'
+              : `${lostSegments} parts of the screen recording could not be saved, but your taps and answers were submitted in full.`}
+          </Text>
+        </Callout>
+      ) : null}
       <Callout icon="lock">
         <Text style={type.caption}>
           Your recording, taps and answers were sent securely to the research team. Recordings are

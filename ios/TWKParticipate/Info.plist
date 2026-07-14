@@ -45,8 +45,6 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera is used only to scan the test QR code.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone can be enabled during a test session if the study asks for think-aloud audio.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

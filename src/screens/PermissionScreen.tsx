@@ -34,12 +34,13 @@ export function PermissionScreen() {
               setBusy(false);
             }}
           />
-          {unavailable && __DEV__ ? (
-            // Dev-only escape hatch: simulators can't record, but the rest
-            // of the flow must stay testable. Production keeps the study's
-            // recordingRequired policy strict.
+          {denied ? (
+            // A device that genuinely can't record (or a participant who
+            // keeps denying the OS dialog) must not be a dead end: the
+            // session continues without video — taps, events and answers
+            // are still collected — and is flagged for the dashboard.
             <Button
-              label="Continue without recording (dev)"
+              label="Continue without recording"
               variant="ghost"
               onPress={skipRecordingUnavailable}
             />
