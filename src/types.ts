@@ -28,7 +28,18 @@ export interface TaskConfig {
   required: boolean;
 }
 
-export type QuestionType = 'open_text' | 'opinion_scale' | 'multiple_choice' | 'yes_no';
+export type QuestionType =
+  | 'open_text'
+  /** Synth's name for open_text — accepted as an alias so the web builder
+   *  can send its native type names unmapped. */
+  | 'open_question'
+  | 'opinion_scale'
+  | 'multiple_choice'
+  | 'yes_no'
+  /** Informational block (markdown body, no answer). */
+  | 'context_screen'
+  /** Single-line input with a keyboard hint (text/email/phone/number). */
+  | 'simple_input';
 
 export interface QuestionBlock {
   id: string;
@@ -43,9 +54,19 @@ export interface QuestionBlock {
   scaleMax?: number;
   scaleMinLabel?: string;
   scaleMaxLabel?: string;
+  /** opinion_scale — 'emoji' renders faces when the scale has exactly 5 steps. */
+  scaleStyle?: 'numeric' | 'emoji';
   /** multiple_choice */
   options?: string[];
   multiSelect?: boolean;
+  /** multiple_choice — offer a free-text "Other" answer. */
+  allowOther?: boolean;
+  /** context_screen */
+  bodyMarkdown?: string;
+  /** simple_input */
+  inputType?: 'text' | 'email' | 'phone' | 'number';
+  /** open_text / open_question / simple_input */
+  placeholder?: string;
 }
 
 export interface ConsentConfig {

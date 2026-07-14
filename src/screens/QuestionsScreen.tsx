@@ -74,9 +74,13 @@ export function QuestionsScreen() {
           {q.description ? (
             <Text style={[type.body, { marginTop: spacing.xs }]}>{q.description}</Text>
           ) : null}
-          <Text style={[type.caption, { marginVertical: spacing.sm }]}>
-            {q.required ? 'Required' : 'Optional'}
-          </Text>
+          {q.type !== 'context_screen' ? (
+            <Text style={[type.caption, { marginVertical: spacing.sm }]}>
+              {q.required ? 'Required' : 'Optional'}
+            </Text>
+          ) : (
+            <View style={{ height: spacing.sm }} />
+          )}
           <QuestionRenderer
             question={q}
             value={value}
