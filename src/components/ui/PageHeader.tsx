@@ -49,8 +49,10 @@ const styles = StyleSheet.create({
   backTile: {
     width: 40,
     height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
