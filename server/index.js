@@ -119,12 +119,16 @@ function demoBootstrap(sessionId, useFigma) {
         title: 'Find a product you like',
         instruction: 'Browse the shop and open the product that looks most interesting to you.',
         required: true,
+        // Auto-completes when the participant opens a product detail screen.
+        successScreenIds: ['detail'],
       },
       {
         id: 'task_checkout',
         title: 'Buy the product',
         instruction: 'Add the product to your cart and complete the checkout.',
         required: true,
+        // Auto-completes on the order-confirmation screen.
+        successScreenIds: ['done'],
       },
     ],
     questionBlocks: useFigma
@@ -625,7 +629,8 @@ async function load(){
             m.style.top = (tap.normalizedY * video.clientHeight) + 'px';
             wrap.appendChild(m);
           }
-      }
+        }
+      });
     });
   }
 }

@@ -107,11 +107,46 @@ export function PlayerScreen() {
   const completeTask = useSession((s) => s.completeTask);
   const [taskSheet, setTaskSheet] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [goalReached, setGoalReached] = useState(false);
   const currentScreenId = useRef<string>('entry');
   const webviewRef = useRef<WebView>(null);
   const captureAreaRef = useRef<View>(null);
   const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureBusy = useRef(false);
+  // Fires the auto-complete exactly once per task, even though the goal
+  // screen can arrive from both signal sources (bridge + frame) and taps
+  // can keep coming during the confirmation flash.
+  const autoCompletedRef = useRef(false);
+
+  /**
+   * Single choke point for every prototype screen change, from either
+   * signal source: the WebView hash bridge (DOM/hosted prototypes) or a
+   * server-clustered frame `screenKey` (canvas prototypes). Records the
+   * navigation and, when the screen is the current task's declared goal,
+   * auto-completes the task — no manual "I completed the task" tap
+   * (Maze-style). Give-up stays an explicit action in the task sheet.
+   */
+  const onScreenChange = (screenId: string, source: 'webview' | 'frame') => {
+    if (!screenId || screenId === currentScreenId.current) return;
+    currentScreenId.current = screenId;
+    const activeTask = bootstrap?.tasks[index];
+    track('prototype_navigation', {
+      taskId: activeTask?.id,
+      meta: { prototypeScreenId: screenId, source },
+    });
+    const goals = activeTask?.successScreenIds ?? [];
+    if (activeTask && !autoCompletedRef.current && goals.includes(screenId)) {
+      autoCompletedRef.current = true;
+      track('task_goal_reached', {
+        taskId: activeTask.id,
+        meta: { prototypeScreenId: screenId, source },
+      });
+      // Success confirmation, then advance — the participant sees the task
+      // register (which task, by name) without tapping anything.
+      setGoalReached(true);
+      setTimeout(() => void completeTask('completed'), 1500);
+    }
+  };
 
   // Frames are captured for EVERY prototype type — heatmaps are built for
   // all sessions, and the clustered canonical frames double as the heatmap
@@ -136,13 +171,7 @@ export function PlayerScreen() {
         captureTimer.current = setTimeout(() => void doCapture(), 1500);
         return;
       }
-      if (screenKey && screenKey !== currentScreenId.current) {
-        currentScreenId.current = screenKey;
-        track('prototype_navigation', {
-          taskId: bootstrap?.tasks[index]?.id,
-          meta: { prototypeScreenId: screenKey, source: 'frame' },
-        });
-      }
+      if (screenKey) onScreenChange(screenKey, 'frame');
     } catch {
       // Frame evidence is best-effort; never disturb the participant.
     } finally {
@@ -161,6 +190,7 @@ export function PlayerScreen() {
   const task = bootstrap.tasks[index];
   if (!task) return null;
   const uri = task.startUrl ?? bootstrap.prototype.entryUrl;
+  const hasGoal = (task.successScreenIds?.length ?? 0) > 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -216,11 +246,7 @@ export function PlayerScreen() {
                 return;
               }
               if (msg.kind === 'screen' && msg.screenId) {
-                currentScreenId.current = msg.screenId;
-                track('prototype_navigation', {
-                  taskId: task.id,
-                  meta: { prototypeScreenId: msg.screenId },
-                });
+                onScreenChange(msg.screenId, 'webview');
               } else if (msg.kind === 'tap' && msg.nx !== undefined && msg.ny !== undefined) {
                 track('tap', {
                   taskId: task.id,
@@ -257,7 +283,7 @@ export function PlayerScreen() {
           </Text>
         </Pressable>
         <Pressable style={styles.barDone} onPress={() => setTaskSheet(true)}>
-          <Text style={styles.barDoneText}>Done?</Text>
+          <Text style={styles.barDoneText}>{hasGoal ? 'Stuck?' : 'Done?'}</Text>
         </Pressable>
       </View>
 
@@ -270,13 +296,20 @@ export function PlayerScreen() {
           <Text style={[type.h2, { marginTop: 4 }]}>{task.title}</Text>
           <Text style={[type.body, { marginTop: spacing.sm }]}>{task.instruction}</Text>
           <View style={{ marginTop: spacing.lg }}>
-            <Button
-              label="I completed the task"
-              onPress={() => {
-                setTaskSheet(false);
-                completeTask('completed');
-              }}
-            />
+            {hasGoal ? (
+              <Text style={[type.caption, { marginBottom: spacing.md }]}>
+                This task finishes on its own once you reach the goal. Only use the
+                button below if you can’t get there.
+              </Text>
+            ) : (
+              <Button
+                label="I completed the task"
+                onPress={() => {
+                  setTaskSheet(false);
+                  completeTask('completed');
+                }}
+              />
+            )}
             <Button
               label="I give up"
               variant="danger"
@@ -289,6 +322,25 @@ export function PlayerScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Auto-complete confirmation — non-blocking, dismisses itself when
+          the task advances. */}
+      {goalReached ? (
+        <View style={styles.goalOverlay} pointerEvents="none">
+          <View style={styles.goalCard}>
+            <View style={styles.goalCheck}>
+              <Text style={styles.goalCheckMark}>✓</Text>
+            </View>
+            <Text style={styles.goalKicker}>Task {index + 1} complete</Text>
+            <Text style={styles.goalTitle}>{task.title}</Text>
+            <Text style={styles.goalSub}>
+              {index === bootstrap.tasks.length - 1
+                ? 'Nice work — wrapping up…'
+                : 'Nice work — on to the next one…'}
+            </Text>
+          </View>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -346,4 +398,45 @@ const styles = StyleSheet.create({
     backgroundColor: colors.line,
     marginBottom: spacing.md,
   },
+  goalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.overlay,
+  },
+  goalCard: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.xl * 1.5,
+    gap: spacing.md,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
+  },
+  goalCheck: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.brand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goalCheckMark: { color: '#fff', fontSize: 34, fontWeight: '800' },
+  goalKicker: {
+    color: colors.brand,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  goalTitle: { ...type.h2, textAlign: 'center' },
+  goalSub: { ...type.caption, textAlign: 'center' },
 });

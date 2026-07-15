@@ -26,6 +26,16 @@ export interface TaskConfig {
   /** Optional URL the player should navigate to when the task starts. */
   startUrl?: string;
   required: boolean;
+  /**
+   * Screen id(s) that mark this task as successfully completed. When the
+   * prototype reaches any of them the task auto-completes (Maze-style) —
+   * the participant never taps "I completed the task". Ids are matched
+   * against the same screen signal used for analytics (WebView bridge hash
+   * for DOM/hosted prototypes; server-clustered frame `screenKey`). Omit
+   * for open-ended tasks (e.g. "explore the app"), which keep the manual
+   * Done? action.
+   */
+  successScreenIds?: string[];
 }
 
 export type QuestionType =
@@ -126,6 +136,8 @@ export type SessionEventType =
   | 'recording_started'
   | 'recording_stopped'
   | 'task_started'
+  /** Prototype reached the task's declared goal screen — the app auto-completes. */
+  | 'task_goal_reached'
   | 'task_completed'
   | 'task_abandoned'
   | 'tap'

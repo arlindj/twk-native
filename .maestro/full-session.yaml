@@ -1,5 +1,5 @@
 # End-to-end participant session against the local dev server.
-# Prereqs: `node server/index.js` (port 4000) and Metro (`npx expo start`)
+# Prereqs: `node server/index.js` (port 4000) and Metro (`npm start`)
 # running, app installed on the simulator/device.
 # Run: maestro test .maestro/full-session.yaml
 #
@@ -58,7 +58,7 @@ appId: com.tawakkalnaos.participate
     timeout: 10000
 - tapOn: "Enable screen recording"
 - tapOn:
-    text: "Continue without recording (dev)"
+    text: "Continue without recording"
     optional: true
 
 # --- Task 1: browse and open a product ---
@@ -73,8 +73,11 @@ appId: com.tawakkalnaos.participate
 - extendedWaitUntil:
     visible: "Wireless Headphones"
     timeout: 10000
-- tapOn: "Done?"
-- tapOn: "I completed the task"
+# Reaching the product-detail screen is task 1's goal — the app
+# auto-completes and advances to task 2 with no manual "Done" tap.
+- extendedWaitUntil:
+    visible: "Buy the product"
+    timeout: 15000
 
 # --- Task 2: full checkout ---
 - extendedWaitUntil:
@@ -100,8 +103,8 @@ appId: com.tawakkalnaos.participate
 - extendedWaitUntil:
     visible: "Order confirmed!"
     timeout: 10000
-- tapOn: "Done?"
-- tapOn: "I completed the task"
+# The order-confirmation screen is task 2's goal — auto-completes and
+# advances straight to the task question below.
 
 # --- Task question: opinion scale ---
 - extendedWaitUntil:
