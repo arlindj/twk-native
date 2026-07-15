@@ -22,6 +22,7 @@ import { colors, radius, spacing, type } from '../theme';
 export function IntakeScreen() {
   const bootstrap = useSession((s) => s.bootstrap);
   const submitIntake = useSession((s) => s.submitIntake);
+  const back = useSession((s) => s.back);
   const intake = bootstrap?.intake;
 
   const [fullName, setFullName] = useState('');
@@ -79,6 +80,7 @@ export function IntakeScreen() {
               icon="user"
               title="About you"
               subtitle="No account needed. Tell us a bit about yourself so we can understand who took this test."
+              onBack={back}
             />
           </View>
 

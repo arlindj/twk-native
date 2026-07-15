@@ -94,6 +94,41 @@ export function deviceContext(): DeviceContext {
   };
 }
 
+/**
+ * Whether a `?api=` override points at a local / private-network address.
+ *
+ * The override is a QA affordance and is always honored in debug builds.
+ * In release builds a crafted QR must not be able to redirect the evidence
+ * stream (video, name, taps) to an attacker-controlled *public* server — but
+ * pointing a real device at a dev server on the same LAN is exactly how the
+ * app is tested before the production backend exists. So in release we honor
+ * the override only when the target is loopback / link-local / RFC-1918
+ * private space, which an off-network attacker cannot reach anyway.
+ */
+export function isLocalApiTarget(rawUrl: string): boolean {
+  try {
+    const { hostname } = new URL(rawUrl);
+    if (hostname === 'localhost' || hostname.endsWith('.local')) return true;
+    const m = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return false;
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (a === 127) return true; // loopback
+    if (a === 10) return true; // 10.0.0.0/8
+    if (a === 192 && b === 168) return true; // 192.168.0.0/16
+    if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+    if (a === 169 && b === 254) return true; // link-local
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** True when this build may adopt `apiOverride` as its backend. */
+function mayUseApiOverride(apiOverride: string): boolean {
+  return __DEV__ || isLocalApiTarget(apiOverride);
+}
+
 /** Rejects if `p` does not settle within `ms` — used to bound native calls. */
 function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
@@ -175,6 +210,8 @@ interface SessionState {
   submitIntake: (fields: Omit<ParticipantProfile, 'participantId'>) => Promise<void>;
   grantRecording: () => Promise<void>;
   skipRecordingUnavailable: () => void;
+  /** Step back through the pre-test setup phases (consent → intake → permission). */
+  back: () => void;
   beginTask: () => Promise<void>;
   completeTask: (outcome: 'completed' | 'abandoned') => Promise<void>;
   submitAnswers: (answers: AnswerPayload[]) => Promise<void>;
@@ -263,9 +300,11 @@ export const useSession = create<SessionState>((set, get) => ({
     }
     set({ phase: 'resolving', error: undefined, testToken });
     // The ?api= override is a development affordance. In release builds a
-    // crafted QR must never be able to redirect the evidence stream
-    // (video, name, taps) to an attacker-controlled server.
-    if (apiOverride && __DEV__) api.setApiBase(apiOverride);
+    // crafted QR must never be able to redirect the evidence stream (video,
+    // name, taps) to an attacker-controlled *public* server — but a dev
+    // server on the same LAN is honored so real-device testing works before
+    // the production backend exists (see mayUseApiOverride / isLocalApiTarget).
+    if (apiOverride && mayUseApiOverride(apiOverride)) api.setApiBase(apiOverride);
 
     // Cold-restart recovery: same link + a keychain token for the
     // snapshot's session -> resume it instead of minting a new session.
@@ -277,7 +316,7 @@ export const useSession = create<SessionState>((set, get) => ({
       (await api.restoreToken(snap.sessionId))
     ) {
       try {
-        if (__DEV__ && snap.apiBase) api.setApiBase(snap.apiBase);
+        if (snap.apiBase && mayUseApiOverride(snap.apiBase)) api.setApiBase(snap.apiBase);
         const bootstrap = await api.fetchBootstrap(snap.sessionId);
         await initQueue(snap.sessionId, APP_VERSION);
         await initAnswersOutbox(snap.sessionId);
@@ -437,6 +476,21 @@ export const useSession = create<SessionState>((set, get) => ({
   skipRecordingUnavailable: () => {
     track('recording_skipped', { meta: { reason: get().error ?? 'unknown' } });
     set({ phase: 'task_intro', recordingEnabled: false, error: undefined });
+  },
+
+  /**
+   * Back navigation across the pre-test setup screens only. Once a task has
+   * started (task_intro onward) going back would mean discarding a recording,
+   * which is the explicit "leave the test" action instead — so `back` is a
+   * no-op there. Re-submitting consent/intake afterwards is idempotent.
+   */
+  back: () => {
+    const { phase, bootstrap } = get();
+    if (phase === 'intake') {
+      set({ phase: 'consent' });
+    } else if (phase === 'permission' || phase === 'permission_denied') {
+      set({ phase: bootstrap?.intake?.enabled ? 'intake' : 'consent', error: undefined });
+    }
   },
 
   beginTask: async () => {

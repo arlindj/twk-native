@@ -16,6 +16,7 @@ export function PermissionScreen() {
   const error = useSession((s) => s.error);
   const grantRecording = useSession((s) => s.grantRecording);
   const skipRecordingUnavailable = useSession((s) => s.skipRecordingUnavailable);
+  const back = useSession((s) => s.back);
   const [busy, setBusy] = useState(false);
 
   const denied = phase === 'permission_denied';
@@ -52,6 +53,7 @@ export function PermissionScreen() {
         <PageHeader
           icon="video"
           title="Screen recording"
+          onBack={back}
           subtitle={`This study records your screen — but only while you’re doing the tasks. ${
             Platform.OS === 'ios'
               ? 'iOS will ask for your permission when the first task starts.'
