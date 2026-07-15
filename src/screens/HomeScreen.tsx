@@ -30,6 +30,11 @@ export function HomeScreen() {
   const [manual, setManual] = useState(false);
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [inputFocused, setInputFocused] = useState(false);
+  // The hero illustration stays put when switching to manual entry, and
+  // only gets out of the way once the participant actually taps the field
+  // and the keyboard opens — otherwise it overlaps the keyboard/content.
+  const hideHero = manual && inputFocused;
 
   const openTest = () => {
     const parsed = parseTestLink(input);
@@ -58,14 +63,18 @@ export function HomeScreen() {
         </View>
 
         {/* Hero: calm concentric rings behind a single mark — the mark and
-            copy change with the mode (scan-or-link vs link-only). */}
-        <View style={styles.hero}>
-          <View style={[styles.ring, styles.ringOuter]} />
-          <View style={[styles.ring, styles.ringInner]} />
-          <View style={styles.heroMark}>
-            <Feather name={manual ? 'link' : 'smartphone'} size={40} color={colors.brand} />
+            copy change with the mode (scan-or-link vs link-only). Hidden
+            while the manual-entry field is focused so it never overlaps
+            the keyboard or the input on smaller screens. */}
+        {!hideHero ? (
+          <View style={styles.hero}>
+            <View style={[styles.ring, styles.ringOuter]} />
+            <View style={[styles.ring, styles.ringInner]} />
+            <View style={styles.heroMark}>
+              <Feather name={manual ? 'link' : 'smartphone'} size={40} color={colors.brand} />
+            </View>
           </View>
-        </View>
+        ) : null}
 
         <View style={styles.copy}>
           {manual ? (
@@ -96,7 +105,8 @@ export function HomeScreen() {
                 placeholderTextColor={colors.inkFaint}
                 autoCapitalize="none"
                 autoCorrect={false}
-                autoFocus
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
                 onSubmitEditing={openTest}
               />
               {error ? <Text style={styles.error}>{error}</Text> : null}
