@@ -449,6 +449,13 @@ function drawHeat(canvas, taps, mode, showMisclickColor){
 }
 
 async function load(){
+  // The 8s poll below replaces the sessions/heatmap markup wholesale,
+  // which destroys any <video> element mid-playback (hard pause) and
+  // shifts page height under the reader (scroll jumps). Skip this cycle
+  // entirely while a recording is playing — a few seconds of staleness
+  // is a fine trade for not yanking the video out from under someone.
+  if ([...document.querySelectorAll('#sessions video')].some(v => !v.paused && !v.ended)) return;
+  const scrollY = window.scrollY;
   const sessions = await (await fetch('/api/dev/sessions')).json();
 
   /* -------------------------- Heatmaps -------------------------
@@ -633,6 +640,7 @@ async function load(){
       });
     });
   }
+  window.scrollTo(0, scrollY);
 }
 load(); setInterval(load, 8000);
 </script>
