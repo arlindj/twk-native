@@ -63,8 +63,9 @@ export function GraphPlayerScreen() {
     if (!autoCompletedRef.current && goals.includes(nodeId)) {
       autoCompletedRef.current = true;
       track('task_goal_reached', { taskId: task.id, meta: { prototypeScreenId: nodeId, source: 'graph' } });
+      // Goal detected by the app — the modal offers the next step instead of
+      // a manual "I completed the task".
       setGoalReached(true);
-      setTimeout(() => void completeTask('completed'), 1500);
     }
   };
 
@@ -160,18 +161,22 @@ export function GraphPlayerScreen() {
       </Modal>
 
       {goalReached ? (
-        <View style={styles.goalOverlay} pointerEvents="none">
+        <View style={styles.goalOverlay}>
           <View style={styles.goalCard}>
             <View style={styles.goalCheck}>
               <Text style={styles.goalCheckMark}>✓</Text>
             </View>
             <Text style={styles.goalKicker}>Task {index + 1} complete</Text>
             <Text style={styles.goalTitle}>{task.title}</Text>
-            <Text style={styles.goalSub}>
-              {index === bootstrap.tasks.length - 1
-                ? 'Nice work — wrapping up…'
-                : 'Nice work — on to the next one…'}
-            </Text>
+            <Text style={styles.goalSub}>Nice work — the app spotted you reached the goal.</Text>
+            <View style={{ alignSelf: 'stretch', marginTop: spacing.sm }}>
+              <Button
+                label={
+                  index === bootstrap.tasks.length - 1 ? 'Finish test' : 'Continue to next task'
+                }
+                onPress={() => void completeTask('completed')}
+              />
+            </View>
           </View>
         </View>
       ) : null}

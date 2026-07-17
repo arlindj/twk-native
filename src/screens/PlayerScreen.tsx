@@ -141,10 +141,10 @@ export function PlayerScreen() {
         taskId: activeTask.id,
         meta: { prototypeScreenId: screenId, source },
       });
-      // Success confirmation, then advance — the participant sees the task
-      // register (which task, by name) without tapping anything.
+      // The app detected the goal itself — the participant never taps
+      // "I completed the task". A modal offers the single next step
+      // (next task, or finishing the session on the last one).
       setGoalReached(true);
-      setTimeout(() => void completeTask('completed'), 1500);
     }
   };
 
@@ -334,21 +334,25 @@ export function PlayerScreen() {
         </View>
       </Modal>
 
-      {/* Auto-complete confirmation — non-blocking, dismisses itself when
-          the task advances. */}
+      {/* Auto-complete modal — the app recognized the goal screen itself, so
+          the participant only picks the next step (never "I completed it"). */}
       {goalReached ? (
-        <View style={styles.goalOverlay} pointerEvents="none">
+        <View style={styles.goalOverlay}>
           <View style={styles.goalCard}>
             <View style={styles.goalCheck}>
               <Text style={styles.goalCheckMark}>✓</Text>
             </View>
             <Text style={styles.goalKicker}>Task {index + 1} complete</Text>
             <Text style={styles.goalTitle}>{task.title}</Text>
-            <Text style={styles.goalSub}>
-              {index === bootstrap.tasks.length - 1
-                ? 'Nice work — wrapping up…'
-                : 'Nice work — on to the next one…'}
-            </Text>
+            <Text style={styles.goalSub}>Nice work — the app spotted you reached the goal.</Text>
+            <View style={{ alignSelf: 'stretch', marginTop: spacing.sm }}>
+              <Button
+                label={
+                  index === bootstrap.tasks.length - 1 ? 'Finish test' : 'Continue to next task'
+                }
+                onPress={() => void completeTask('completed')}
+              />
+            </View>
           </View>
         </View>
       ) : null}
