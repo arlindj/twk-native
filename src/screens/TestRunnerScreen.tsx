@@ -4,6 +4,7 @@ import { Alert, AppState, BackHandler } from 'react-native';
 import { RootStackParamList } from '../navigation';
 import { useSession } from '../state/sessionStore';
 import { ConsentScreen } from './ConsentScreen';
+import { GraphPlayerScreen } from './GraphPlayerScreen';
 import { IntakeScreen } from './IntakeScreen';
 import { PermissionScreen } from './PermissionScreen';
 import { PlayerScreen } from './PlayerScreen';
@@ -25,6 +26,7 @@ export function TestRunnerScreen() {
   const api = params?.api;
   const phase = useSession((s) => s.phase);
   const currentTaskIndex = useSession((s) => s.currentTaskIndex);
+  const isGraphPrototype = useSession((s) => s.bootstrap?.prototype.type === 'figma_graph');
   const resolveFromToken = useSession((s) => s.resolveFromToken);
   const handleAppState = useSession((s) => s.handleAppState);
 
@@ -89,7 +91,15 @@ export function TestRunnerScreen() {
     case 'task_intro':
       return <TaskIntroScreen />;
     case 'testing':
-      return <PlayerScreen />;
+      // A confirmed clickable Figma graph has no URL to load — it renders
+      // natively (screens-as-images + hotspots). Remounted per task, like
+      // the web GraphPlayer's `key={current.id}`: each mission restarts
+      // from the study's shared graph start screen.
+      return isGraphPrototype ? (
+        <GraphPlayerScreen key={currentTaskIndex} />
+      ) : (
+        <PlayerScreen />
+      );
     case 'interrupted':
       return <InterruptedScreen />;
     case 'task_questions':

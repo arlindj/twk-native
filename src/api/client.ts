@@ -1,46 +1,65 @@
 import * as SecureStore from '../native/secureStore';
 import { randomUUID } from '../utils/crypto';
 import {
+  ensureAuth,
+  getSynthApiBase,
+  hasAuthSession,
+  redeemInvite,
+  setSynthApiBase,
+  synth,
+  updateTesterProfile,
+} from '../lib/synthClient';
+import {
   AnswerPayload,
   BootstrapPayload,
   DeviceContext,
+  GraphConfig,
   ParticipantProfile,
+  PrototypeConfig,
+  QuestionBlock,
+  QuestionType,
   RecordingCompletePayload,
   SessionEvent,
   StartSessionResponse,
+  TaskConfig,
 } from '../types';
 
 /**
- * Session Client — the only door to the backend. The mobile app never
- * talks to the database; every payload is scoped by the participant
- * session token returned from /mobile/sessions/start.
+ * Session Client — the only door to the backend. Talks directly to the
+ * synth (TawakkalnaOS web app) Supabase project + its /api/mobile/* and
+ * /api/human-beats routes. Function signatures here are unchanged from the
+ * original custom-dev-server client so sessionStore.ts and every screen work
+ * without modification — only the implementation moved.
+ *
+ * Must stay in sync with synth's packages/types HUMAN_CONSENT_VERSION.
  */
+const HUMAN_CONSENT_VERSION = 'v1';
 
-const DEFAULT_API_BASE = 'https://test.tawakkalnaos.app/api';
-
-let apiBase = DEFAULT_API_BASE;
-let sessionToken: string | null = null;
+let currentStudyId: string | null = null;
 
 export function setApiBase(url: string) {
-  apiBase = url.replace(/\/$/, '');
+  setSynthApiBase(url);
 }
 
 export function getApiBase() {
-  return apiBase;
+  return getSynthApiBase();
 }
 
-export async function persistToken(sessionId: string, token: string) {
-  sessionToken = token;
-  await SecureStore.setItem('twk_session_token', JSON.stringify({ sessionId, token }));
+const SNAPSHOT_KEY = 'twk_session_token';
+
+export async function persistToken(sessionId: string, studyId: string) {
+  currentStudyId = studyId;
+  await SecureStore.setItem(SNAPSHOT_KEY, JSON.stringify({ sessionId, studyId }));
 }
 
 export async function restoreToken(sessionId: string): Promise<boolean> {
-  const raw = await SecureStore.getItem('twk_session_token');
+  const raw = await SecureStore.getItem(SNAPSHOT_KEY);
   if (!raw) return false;
   try {
-    const parsed = JSON.parse(raw) as { sessionId: string; token: string };
+    const parsed = JSON.parse(raw) as { sessionId: string; studyId: string };
     if (parsed.sessionId !== sessionId) return false;
-    sessionToken = parsed.token;
+    if (!(await hasAuthSession())) return false;
+    currentStudyId = parsed.studyId;
     return true;
   } catch {
     return false;
@@ -48,9 +67,9 @@ export async function restoreToken(sessionId: string): Promise<boolean> {
 }
 
 /**
- * Stable anonymous guest id for this device. No login: we mint a random
- * id once and reuse it across sessions so the dashboard can recognize a
- * returning tester without ever knowing who they are.
+ * Stable anonymous guest id for this device, kept only as a local display
+ * fallback — synth identifies testers by their real Supabase auth.uid(),
+ * not this value.
  */
 export async function getGuestParticipantId(): Promise<string> {
   const existing = await SecureStore.getItem('twk_guest_id');
@@ -70,131 +89,387 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  method: 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-  opts: { auth?: boolean; retries?: number; timeoutMs?: number } = {},
-): Promise<T> {
-  const { auth = true, retries = 2, timeoutMs = 15000 } = opts;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (auth && sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
+/* ---------------------- synth study-content shapes ---------------------- */
 
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    // Per-attempt timeout: a stalled socket must never strand the session
-    // on a spinner. On timeout the request aborts and the retry loop runs.
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const res = await fetch(`${apiBase}${path}`, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        let code = 'unknown_error';
-        let message = `Request failed with status ${res.status}`;
-        try {
-          const data = await res.json();
-          code = data.code ?? code;
-          message = data.message ?? message;
-        } catch {
-          /* non-JSON error body */
-        }
-        // 4xx errors are contract errors — retrying will not help.
-        if (res.status < 500) throw new ApiError(res.status, code, message);
-        lastError = new ApiError(res.status, code, message);
-      } else {
-        return (await res.json()) as T;
-      }
-    } catch (err) {
-      if (err instanceof ApiError && err.status < 500) throw err;
-      lastError = err;
-    } finally {
-      clearTimeout(timer);
-    }
-    await new Promise<void>((r) => setTimeout(() => r(), 500 * 2 ** attempt));
+interface SynthPrototype {
+  id: string;
+  label: string;
+  prototype_url: string;
+  device: 'mobile' | 'desktop';
+  is_figma_embed: boolean;
+}
+interface SynthPrompt {
+  id: string;
+  type: string;
+  title: string;
+  description: string | null;
+  prototype_id: string | null;
+  expected_success_screen: string | null;
+  config: unknown;
+}
+interface SynthGraphScreen {
+  nodeId: string;
+  image_url: string | null;
+  name: string;
+  width: number;
+  height: number;
+  is_start: boolean;
+}
+interface SynthGraphHotspot {
+  screenNodeId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  destinationNodeId: string | null;
+  navKind: string;
+  dangling: boolean;
+}
+interface SynthStudyContent {
+  study: {
+    id: string;
+    title: string;
+    ai_observation_enabled: boolean;
+    prototype_source: 'url' | 'figma';
+  };
+  prototypes: SynthPrototype[];
+  prompts: SynthPrompt[];
+  graph: {
+    ready: boolean;
+    start_node_id: string | null;
+    screens: SynthGraphScreen[];
+    hotspots: SynthGraphHotspot[];
+  };
+  figma_frames: { id: string; image_url: string; name: string; width: number; height: number; is_start_frame: boolean }[];
+}
+
+function consentBody(aiObservationEnabled: boolean): string {
+  const lines = [
+    'What we collect:',
+    '- Whether you completed each task, and how long it took.',
+    '- Your ease rating and any notes you choose to write.',
+    '- Taps and screens visited, so the researcher can see where people get stuck.',
+    '- A recording of this app only, while you are doing the tasks.',
+  ];
+  if (aiObservationEnabled) {
+    lines.push(
+      '',
+      'This session will be observed by AI to help identify usability patterns. This is required to take part in this study.',
+    );
   }
-  throw lastError;
+  return lines.join('\n');
+}
+
+function translateQuestionPrompt(p: SynthPrompt, afterTaskId: string | undefined): QuestionBlock {
+  const cfg = (p.config ?? {}) as Record<string, unknown>;
+  const base = {
+    id: p.id,
+    afterTaskId,
+    title: p.title,
+    description: p.description ?? undefined,
+    required: true,
+  };
+  switch (p.type) {
+    case 'opinion_scale':
+      return {
+        ...base,
+        type: 'opinion_scale',
+        scaleMin: typeof cfg.min === 'number' ? cfg.min : 1,
+        scaleMax: typeof cfg.max === 'number' ? cfg.max : 5,
+        scaleMinLabel: (cfg.min_label as string) || undefined,
+        scaleMaxLabel: (cfg.max_label as string) || undefined,
+        scaleStyle: cfg.style === 'emoji' ? 'emoji' : 'numeric',
+      };
+    case 'multiple_choice': {
+      const options = Array.isArray(cfg.options)
+        ? (cfg.options as { label?: string }[]).map((o) => o.label ?? '').filter(Boolean)
+        : [];
+      return {
+        ...base,
+        type: 'multiple_choice',
+        options,
+        multiSelect: !!cfg.multi_select,
+        allowOther: !!cfg.allow_other,
+      };
+    }
+    case 'context_screen':
+      return { ...base, type: 'context_screen', bodyMarkdown: (cfg.body_markdown as string) || '' };
+    case 'simple_input': {
+      const inputType = cfg.input_type;
+      return {
+        ...base,
+        type: 'simple_input',
+        inputType: (['text', 'email', 'phone', 'number'] as const).includes(inputType as never)
+          ? (inputType as 'text' | 'email' | 'phone' | 'number')
+          : 'text',
+        placeholder: (cfg.placeholder as string) || undefined,
+      };
+    }
+    case 'open_question':
+    default:
+      return { ...base, type: 'open_question' as QuestionType };
+  }
+}
+
+function translateBootstrap(sessionId: string, raw: SynthStudyContent): BootstrapPayload {
+  const protoById = new Map(raw.prototypes.map((p) => [p.id, p]));
+  const defaultProto = raw.prototypes[0];
+
+  let prototype: PrototypeConfig;
+  if (raw.graph.ready) {
+    const graph: GraphConfig = {
+      startNodeId: raw.graph.start_node_id ?? raw.graph.screens.find((s) => s.is_start)?.nodeId ?? '',
+      screens: raw.graph.screens.map((s) => ({
+        nodeId: s.nodeId,
+        imageUrl: s.image_url,
+        name: s.name,
+        width: s.width,
+        height: s.height,
+        isStart: s.is_start,
+      })),
+      hotspots: raw.graph.hotspots.map((h) => ({
+        screenNodeId: h.screenNodeId,
+        x: h.x,
+        y: h.y,
+        w: h.w,
+        h: h.h,
+        destinationNodeId: h.destinationNodeId,
+        dangling: h.dangling,
+      })),
+    };
+    prototype = {
+      type: 'figma_graph',
+      platform: 'mobile_app',
+      entryUrl: '',
+      viewport: { width: 390, height: 844 },
+      graph,
+    };
+  } else if (defaultProto) {
+    prototype = {
+      type: defaultProto.is_figma_embed ? 'figma_proto' : 'live_url',
+      platform: 'mobile_app',
+      entryUrl: defaultProto.prototype_url,
+      viewport: { width: 390, height: 844 },
+    };
+  } else {
+    // No confirmed graph and no URL prototype (Figma frames only, not yet
+    // confirmed clickable) — nothing this runtime can render. Surfaced as
+    // "study has no tasks" by the caller's tasks.length check below only if
+    // there are also no missions; otherwise this is a known v1 gap (see
+    // AGENTS/summary — ungraphed Figma-frame-only studies aren't supported).
+    prototype = { type: 'live_url', platform: 'mobile_app', entryUrl: '', viewport: { width: 390, height: 844 } };
+  }
+
+  const tasks: TaskConfig[] = [];
+  const questionBlocks: QuestionBlock[] = [];
+  let lastMissionId: string | undefined;
+  for (const p of raw.prompts) {
+    if (p.type === 'mission') {
+      const proto = p.prototype_id ? protoById.get(p.prototype_id) : undefined;
+      tasks.push({
+        id: p.id,
+        title: p.title,
+        instruction: p.description ?? '',
+        startUrl: proto && !raw.graph.ready ? proto.prototype_url : undefined,
+        required: true,
+        successScreenIds: p.expected_success_screen ? [p.expected_success_screen] : undefined,
+      });
+      lastMissionId = p.id;
+    } else {
+      questionBlocks.push(translateQuestionPrompt(p, lastMissionId));
+    }
+  }
+
+  return {
+    sessionId,
+    studyVersionId: raw.study.id,
+    studyName: raw.study.title,
+    // synth has no per-invite expiry (only active/inactive + closed_at,
+    // both checked server-side at redeem/begin time) — far-future sentinel.
+    expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString(),
+    recordingRequired: true,
+    prototype,
+    consent: { version: HUMAN_CONSENT_VERSION, body: consentBody(raw.study.ai_observation_enabled) },
+    intake: { enabled: true, askFullName: true, askAge: true, askRole: true, roleOptions: [] },
+    tasks,
+    questionBlocks,
+  };
 }
 
 /* ------------------------- Endpoint map ------------------------- */
 
-export function startSession(testToken: string, device: DeviceContext) {
-  return request<StartSessionResponse>(
-    'POST',
-    '/mobile/sessions/start',
-    { testToken, device },
-    { auth: false },
-  );
-}
-
-export function fetchBootstrap(sessionId: string) {
-  return request<BootstrapPayload>('GET', `/mobile/sessions/${sessionId}/bootstrap`);
-}
-
-export function acceptConsent(sessionId: string, consentVersion: string, deviceId: string) {
-  return request<{ ok: true }>('POST', `/mobile/sessions/${sessionId}/consent`, {
-    consentVersion,
-    acceptedAt: new Date().toISOString(),
-    deviceId,
+export async function startSession(testToken: string, _device: DeviceContext): Promise<StartSessionResponse> {
+  let studyId: string;
+  try {
+    studyId = await redeemInvite(testToken);
+  } catch (err) {
+    // Mirrors the old server's 410 for an expired/invalid link — sessionStore
+    // shows "This test link has expired." for this status.
+    throw new ApiError(410, 'expired', err instanceof Error ? err.message : 'Invalid or inactive invite code');
+  }
+  const { session_id } = await synth.post<{ session_id: string }>('/mobile/session/begin', {
+    study_id: studyId,
   });
+  currentStudyId = studyId;
+  // sessionToken is repurposed to carry studyId through persistToken/restoreToken.
+  return { sessionId: session_id, sessionToken: studyId };
 }
 
-/** Guest profile for personas — no auth, just self-reported fields + device guest id. */
-export async function submitParticipantProfile(sessionId: string, profile: Omit<ParticipantProfile, 'participantId'>) {
+export async function fetchBootstrap(sessionId: string): Promise<BootstrapPayload> {
+  if (!currentStudyId) throw new ApiError(404, 'no_study', 'No active study for this session.');
+  const raw = await synth.get<SynthStudyContent>(
+    `/mobile/study-content?study_id=${encodeURIComponent(currentStudyId)}`,
+  );
+  return translateBootstrap(sessionId, raw);
+}
+
+export async function acceptConsent(sessionId: string, _consentVersion: string, _deviceId: string) {
+  await synth.post('/mobile/session/consent', { session_id: sessionId });
+  return { ok: true as const };
+}
+
+/** Guest profile for personas — writes tester_name/age/role directly (RLS: own row only). */
+export async function submitParticipantProfile(
+  sessionId: string,
+  profile: Omit<ParticipantProfile, 'participantId'>,
+) {
   const participantId = await getGuestParticipantId();
-  return request<{ ok: true; participantId: string }>(
-    'POST',
-    `/mobile/sessions/${sessionId}/participant`,
-    { ...profile, participantId },
-  );
+  await updateTesterProfile(sessionId, profile);
+  return { ok: true as const, participantId };
 }
 
-export function startRecordingSlot(sessionId: string) {
-  return request<{ recordingId: string }>('POST', `/mobile/sessions/${sessionId}/recording/start`, {});
-}
-
-export function sendEventBatch(sessionId: string, idempotencyKey: string, events: SessionEvent[]) {
-  return request<{ accepted: number }>('POST', `/mobile/sessions/${sessionId}/events/batch`, {
-    idempotencyKey,
-    events,
-  });
-}
-
-export function sendAnswers(sessionId: string, answers: AnswerPayload[]) {
-  return request<{ ok: true }>('POST', `/mobile/sessions/${sessionId}/answers`, { answers });
-}
-
-export function getUploadUrl(sessionId: string, recordingId: string, fileSizeBytes: number) {
-  return request<{ uploadUrl: string; storageKey: string }>(
-    'POST',
-    `/mobile/sessions/${sessionId}/recording/upload-url`,
-    { recordingId, contentType: 'video/mp4', fileSizeBytes },
-  );
-}
-
-export function completeRecording(sessionId: string, payload: RecordingCompletePayload) {
-  return request<{ ok: true }>('POST', `/mobile/sessions/${sessionId}/recording/complete`, payload);
-}
-
-export function completeSession(sessionId: string) {
-  return request<{ ok: true }>('POST', `/mobile/sessions/${sessionId}/complete`, {});
+/** synth has no server-side "reserve a recording slot" — the caller discards the result anyway. */
+export async function startRecordingSlot(_sessionId: string) {
+  return { recordingId: '' };
 }
 
 /**
- * Uploads a frame capture (screenshot of the prototype viewport). The
- * backend clusters visually-identical frames into stable screen keys, so
- * canvas-rendered prototypes (Figma) get per-screen analytics without any
- * cooperation from the viewer.
+ * Fans the batch out to synth's /api/human-beats (taps + screen navigation —
+ * the heatmap signal). Lifecycle-only events (session_started, app_backgrounded,
+ * recording_*, ...) have no home in synth's schema yet and are acknowledged
+ * without a write — they still ride the mobile-side event log for local
+ * debugging, just not persisted server-side.
  */
-export function uploadFrame(sessionId: string, imageBase64: string, atMs: number) {
-  return request<{ screenKey: string | null; isNew: boolean; blank?: boolean }>(
-    'POST',
-    `/mobile/sessions/${sessionId}/frames`,
-    { imageBase64, atMs },
-    { retries: 1, timeoutMs: 20000 },
-  );
+export async function sendEventBatch(sessionId: string, _idempotencyKey: string, events: SessionEvent[]) {
+  const beats = events
+    .map((e) => toBeat(e))
+    .filter((b): b is NonNullable<ReturnType<typeof toBeat>> => b != null);
+  if (beats.length > 0) {
+    await synth.post('/human-beats', { session_id: sessionId, beats });
+  }
+  return { accepted: events.length };
 }
+
+function toBeat(e: SessionEvent): Record<string, unknown> | null {
+  if (e.type === 'tap') {
+    return {
+      kind: 'click',
+      x: e.normalizedX != null ? Math.round(e.normalizedX * (e.screenWidth ?? 390)) : 0,
+      y: e.normalizedY != null ? Math.round(e.normalizedY * (e.screenHeight ?? 844)) : 0,
+      vw: e.screenWidth ?? 390,
+      vh: e.screenHeight ?? 844,
+      path: typeof e.meta?.prototypeScreenId === 'string' ? e.meta.prototypeScreenId : '',
+      label: '',
+      t: e.timestampMs,
+    };
+  }
+  if (e.type === 'prototype_navigation') {
+    const screenId = e.meta?.prototypeScreenId;
+    if (typeof screenId !== 'string') return null;
+    return { kind: 'navigate', path: screenId, t: e.timestampMs };
+  }
+  return null;
+}
+
+/**
+ * Delivers each answer/mission-outcome as a synth session_prompt_outcome.
+ * Called only from the durable, retried answersOutbox — never directly —
+ * so an offline stretch during the questions never loses a value (same
+ * guarantee the old batch endpoint gave; upsert-by-prompt-id here too, so a
+ * retry after a partial failure never duplicates).
+ */
+export async function sendAnswers(sessionId: string, answers: AnswerPayload[]) {
+  await Promise.all(
+    answers.map(async (a) => {
+      let missionOutcome: { __kind?: string; outcome?: string; durationMs?: number } | null = null;
+      if (typeof a.value === 'string') {
+        try {
+          const parsed = JSON.parse(a.value);
+          if (parsed && parsed.__kind === 'mission_outcome') missionOutcome = parsed;
+        } catch {
+          /* not a mission-outcome sentinel — a normal string answer */
+        }
+      }
+      if (missionOutcome) {
+        await synth.post('/mobile/session/prompt-outcome', {
+          session_id: sessionId,
+          prompt_id: a.questionId,
+          outcome: missionOutcome.outcome === 'completed' ? 'completed' : 'bounced',
+          duration_ms: missionOutcome.durationMs ?? 0,
+        });
+        return;
+      }
+      const isOpenText = a.type === 'open_text' || a.type === 'open_question' || a.type === 'simple_input';
+      await synth.post('/mobile/session/prompt-outcome', {
+        session_id: sessionId,
+        prompt_id: a.questionId,
+        outcome: 'completed',
+        duration_ms: 0,
+        ...(isOpenText ? { free_text_response: String(a.value) } : {}),
+        response_data: a.value,
+      });
+    }),
+  );
+  return { ok: true as const };
+}
+
+export async function getUploadUrl(sessionId: string, recordingId: string, _fileSizeBytes: number) {
+  const { upload_url, storage_path } = await synth.post<{ upload_url: string; storage_path: string }>(
+    '/mobile/recordings/start',
+    { session_id: sessionId, recording_id: recordingId },
+  );
+  return { uploadUrl: upload_url, storageKey: storage_path };
+}
+
+export async function completeRecording(sessionId: string, payload: RecordingCompletePayload) {
+  await synth.post('/mobile/recordings/complete', {
+    session_id: sessionId,
+    recording_id: payload.recordingId,
+    storage_path: payload.storageKey,
+    segment: payload.segment,
+    duration_ms: payload.durationMs,
+    checksum: payload.checksum,
+    file_size_bytes: payload.fileSizeBytes,
+    width: payload.width,
+    height: payload.height,
+  });
+  return { ok: true as const };
+}
+
+export async function completeSession(sessionId: string) {
+  // ease_rating is required by synth's finalize contract; the post-test
+  // "how was it" question (opinion_scale, scale 1-5) already collects this
+  // as a normal answer via submitAnswers/sendAnswers above — finalize just
+  // needs SOME value, so default to a neutral 3 when the study has no such
+  // question (finalize is about closing the session row, not re-scoring it).
+  await synth.post('/mobile/session/finalize', {
+    session_id: sessionId,
+    completion: true,
+    ease_rating: 3,
+  });
+  return { ok: true as const };
+}
+
+/**
+ * Frame capture (canvas-prototype screen clustering) has no equivalent in
+ * synth yet — Figma studies get screen identity from the confirmed graph's
+ * node ids instead (see GraphPlayerScreen), and URL prototypes use the
+ * WebView bridge's screen id. No-op so PlayerScreen's capture loop for
+ * figma_proto (embedded live Figma, not yet a confirmed graph) degrades
+ * quietly instead of erroring.
+ */
+export async function uploadFrame(_sessionId: string, _imageBase64: string, _atMs: number) {
+  return { screenKey: null, isNew: false, blank: true };
+}
+
+export { ensureAuth };

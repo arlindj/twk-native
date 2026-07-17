@@ -12,11 +12,44 @@ export interface PrototypeConfig {
    * figma_proto (and other canvas-rendered viewers) get screen identity
    * from native frame captures clustered server-side, since the viewer
    * exposes no DOM/URL signal for the current frame.
+   *
+   * figma_graph is a confirmed clickable Figma graph (screens exported as
+   * images + hotspot rects, from the web app's own graph extraction) —
+   * rendered natively (GraphPlayerScreen) instead of a WebView, since there
+   * is no URL to load.
    */
-  type: 'html_package' | 'live_url' | 'figma_proto';
+  type: 'html_package' | 'live_url' | 'figma_proto' | 'figma_graph';
   platform: 'mobile_app';
   entryUrl: string;
   viewport: { width: number; height: number };
+  graph?: GraphConfig;
+}
+
+/** One screen of a confirmed clickable Figma graph. */
+export interface GraphScreen {
+  nodeId: string;
+  imageUrl: string | null;
+  name: string;
+  width: number;
+  height: number;
+  isStart: boolean;
+}
+
+/** A tappable region on a graph screen, navigating to another screen. */
+export interface GraphHotspot {
+  screenNodeId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  destinationNodeId: string | null;
+  dangling: boolean;
+}
+
+export interface GraphConfig {
+  startNodeId: string;
+  screens: GraphScreen[];
+  hotspots: GraphHotspot[];
 }
 
 export interface TaskConfig {

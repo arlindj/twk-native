@@ -5,7 +5,7 @@ import { create } from 'zustand';
 import { APP_VERSION as BUILD_VERSION, DEVICE_MODEL, LAUNCH_ID } from '../constants';
 import * as api from '../api/client';
 import * as SecureStore from '../native/secureStore';
-import { clearQueue, drain, initQueue, track } from '../events/eventQueue';
+import { clearQueue, drain, initQueue, sessionElapsedMs, track } from '../events/eventQueue';
 import {
   clearAnswersOutbox,
   drainAnswers,
@@ -204,6 +204,8 @@ interface SessionState {
   lostSegments: number;
   /** Phase to return to after an interruption. */
   interruptedFrom?: Phase;
+  /** sessionElapsedMs() when the current task started — for its outcome's duration_ms. */
+  taskStartedAtMs?: number;
 
   resolveFromToken: (testToken: string, apiOverride?: string) => Promise<void>;
   acceptConsent: () => Promise<void>;
@@ -512,15 +514,31 @@ export const useSession = create<SessionState>((set, get) => ({
     }
 
     track('task_started', { taskId: task.id });
-    set({ phase: 'testing' });
+    set({ phase: 'testing', taskStartedAtMs: sessionElapsedMs() });
   },
 
   completeTask: async (outcome) => {
-    const { bootstrap, currentTaskIndex } = get();
+    const { bootstrap, currentTaskIndex, taskStartedAtMs } = get();
     if (!bootstrap) return;
     const task = bootstrap.tasks[currentTaskIndex];
     if (!task) return;
     track(outcome === 'completed' ? 'task_completed' : 'task_abandoned', { taskId: task.id });
+    // Durable, retried delivery (same outbox as question answers) of this
+    // mission's outcome — sendAnswers recognizes the __kind sentinel and
+    // posts it to synth's session_prompt_outcomes instead of an answer.
+    await enqueueAnswers([
+      {
+        questionId: task.id,
+        taskId: task.id,
+        type: 'context_screen',
+        value: JSON.stringify({
+          __kind: 'mission_outcome',
+          outcome,
+          durationMs: sessionElapsedMs() - (taskStartedAtMs ?? sessionElapsedMs()),
+        }),
+        answeredAtMs: sessionElapsedMs(),
+      },
+    ]);
 
     // Last task done — stop recording NOW so post-test questions are
     // never part of the video.
