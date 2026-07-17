@@ -461,15 +461,32 @@ export async function completeSession(sessionId: string) {
 }
 
 /**
- * Frame capture (canvas-prototype screen clustering) has no equivalent in
- * synth yet — Figma studies get screen identity from the confirmed graph's
- * node ids instead (see GraphPlayerScreen), and URL prototypes use the
- * WebView bridge's screen id. No-op so PlayerScreen's capture loop for
- * figma_proto (embedded live Figma, not yet a confirmed graph) degrades
- * quietly instead of erroring.
+ * Frame capture. Screen IDENTITY comes from the WebView bridge's node-id/hash
+ * (unlike the old dev server there is no server-side pHash clustering), so
+ * screenKey is always null — but the frame itself becomes the study's heatmap
+ * BASE image: synth's Spatial Analytics needs a screenshot of each screen to
+ * draw click points on, and for Figma/external prototypes only the native app
+ * can produce one (the web tester iframe can't screenshot cross-origin).
+ * First frame per (study, viewport, screen) wins server-side.
  */
-export async function uploadFrame(_sessionId: string, _imageBase64: string, _atMs: number) {
-  return { screenKey: null, isNew: false, blank: true };
+export async function uploadFrame(
+  sessionId: string,
+  imageBase64: string,
+  _atMs: number,
+  screenPath?: string,
+  width?: number,
+  height?: number,
+) {
+  if (screenPath && width && height) {
+    await synth.post('/mobile/frames', {
+      session_id: sessionId,
+      screen_path: screenPath,
+      image_base64: imageBase64,
+      width,
+      height,
+    });
+  }
+  return { screenKey: null, isNew: false, blank: false };
 }
 
 export { ensureAuth };

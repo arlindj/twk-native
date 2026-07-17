@@ -1,6 +1,6 @@
 import { useKeepAwake } from '../native/keepAwake';
 import React, { useRef, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { WebView } from 'react-native-webview';
@@ -165,7 +165,18 @@ export function PlayerScreen() {
         result: 'base64',
         width: 390,
       });
-      const { screenKey, blank } = await uploadFrame(sessionId, base64, atMs);
+      // The frame is keyed to the CURRENT screen (bridge node-id/hash) and
+      // becomes the study's heatmap base image for that screen server-side.
+      const { width: winW, height: winH } = Dimensions.get('window');
+      const captureHeight = Math.round(390 * (winH / winW));
+      const { screenKey, blank } = await uploadFrame(
+        sessionId,
+        base64,
+        atMs,
+        currentScreenId.current,
+        390,
+        captureHeight,
+      );
       if (blank) {
         // Prototype still loading — try again shortly.
         captureTimer.current = setTimeout(() => void doCapture(), 1500);
