@@ -31,7 +31,7 @@ const SYNTH_SUPABASE_ANON_KEY =
 // The Next.js app's own base URL (its /api/mobile/* + /api/human-beats
 // routes). Overridable via the deep link's `?api=` param for local QA,
 // exactly like the old dev-server override (see isLocalApiTarget).
-const DEFAULT_SYNTH_API_BASE = 'https://synth-web-neon.vercel.app/api';
+const DEFAULT_SYNTH_API_BASE = 'https://synth.nacew.com/api';
 let synthApiBase = DEFAULT_SYNTH_API_BASE;
 
 export function setSynthApiBase(url: string) {
