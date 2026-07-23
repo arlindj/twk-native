@@ -15,6 +15,7 @@ export function PermissionScreen() {
   const { colors } = useTheme();
   const phase = useSession((s) => s.phase);
   const error = useSession((s) => s.error);
+  const audioRecordingConsent = useSession((s) => s.audioRecordingConsent);
   const grantRecording = useSession((s) => s.grantRecording);
   const skipRecordingUnavailable = useSession((s) => s.skipRecordingUnavailable);
   const back = useSession((s) => s.back);
@@ -72,8 +73,16 @@ export function PermissionScreen() {
           icon="log-out"
           title="Stops if you leave"
           body="Leaving the app stops the recording immediately — other apps are never captured."
-          last
+          last={!audioRecordingConsent}
         />
+        {audioRecordingConsent ? (
+          <ListRow
+            icon="mic"
+            title="Microphone"
+            body="Your voice is recorded together with the screen while you do the tasks — you’ll be asked to allow the microphone."
+            last
+          />
+        ) : null}
 
         {denied && (
           <Callout icon="alert-triangle" tone="danger" style={{ marginTop: spacing.md }}>

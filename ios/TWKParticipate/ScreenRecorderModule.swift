@@ -61,9 +61,10 @@ class ScreenRecorder: NSObject {
     }
   }
 
-  @objc(startRecording:rejecter:)
+  @objc(startRecording:resolver:rejecter:)
   func startRecording(
-    _ resolve: @escaping RCTPromiseResolveBlock,
+    _ withAudio: Bool,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: @escaping RCTPromiseRejectBlock
   ) {
     cleanupStaleRecordings()
@@ -75,9 +76,11 @@ class ScreenRecorder: NSObject {
       reject("E_ALREADY_RECORDING", "A recording is already in progress.", nil)
       return
     }
-    // Session evidence is screen-only; think-aloud audio is a separate,
-    // explicitly consented feature and is off by default.
-    recorder.isMicrophoneEnabled = false
+    // Think-aloud audio is opt-in: the microphone is captured only when the
+    // participant consented to audio on the "Before you start" screen.
+    // ReplayKit surfaces the microphone permission prompt inside its own
+    // consent dialog when this is on (needs NSMicrophoneUsageDescription).
+    recorder.isMicrophoneEnabled = withAudio
     recorder.startRecording { error in
       if let error = error {
         reject("E_START_FAILED", error.localizedDescription, error)

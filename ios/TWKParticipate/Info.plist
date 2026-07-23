@@ -47,6 +47,8 @@
 	<string>Camera is used only to scan the test QR code.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location may be used during a test session if a study prototype requests it while you interact with the app.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Your microphone is recorded together with the screen during a test session, but only if you turn on audio recording and only while you are doing the tasks.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

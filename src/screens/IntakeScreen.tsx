@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, PageHeader, Pill } from '../components/ui';
+import { Button, PageHeader } from '../components/ui';
 import { useSession } from '../state/sessionStore';
 import { inputChrome, radius, spacing, type, useTheme } from '../theme';
 
@@ -75,15 +75,13 @@ export function IntakeScreen() {
           automaticallyAdjustKeyboardInsets
           keyboardDismissMode="on-drag"
         >
-          <Pill label={bootstrap.studyName} tone="muted" />
-          <View style={{ marginTop: spacing.md }}>
-            <PageHeader
-              icon="user"
-              title="About you"
-              subtitle="No account needed. Tell us a bit about yourself so we can understand who took this test."
-              onBack={back}
-            />
-          </View>
+          <PageHeader
+            icon="user"
+            title="About you"
+            subtitle="No account needed. Tell us a bit about yourself so we can understand who took this test."
+            studyName={bootstrap.studyName}
+            onBack={back}
+          />
 
           <View style={{ gap: spacing.lg }}>
             {intake.askFullName ? (

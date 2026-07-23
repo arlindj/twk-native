@@ -1,11 +1,13 @@
 package com.tawakkalnaos.participate.screenrecorder
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -36,6 +38,7 @@ class ScreenRecordService : Service() {
     const val ACTION_STOP = "com.tawakkalnaos.participate.screenrecorder.STOP"
     const val EXTRA_RESULT_CODE = "resultCode"
     const val EXTRA_RESULT_DATA = "resultData"
+    const val EXTRA_WITH_AUDIO = "withAudio"
     private const val NOTIFICATION_ID = 87131
     private const val CHANNEL_ID = "twk_screen_recording"
 
@@ -64,14 +67,19 @@ class ScreenRecordService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
       ACTION_START -> {
-        startAsForeground()
+        // Audio is captured only when the participant opted in AND the
+        // runtime RECORD_AUDIO permission is actually granted — otherwise
+        // the microphone foreground-service type (and MediaRecorder audio
+        // source) would throw. Fall back to video-only rather than fail.
+        val audio = intent.getBooleanExtra(EXTRA_WITH_AUDIO, false) && hasMicPermission()
+        startAsForeground(audio)
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         @Suppress("DEPRECATION")
         val resultData: Intent? = intent.getParcelableExtra(EXTRA_RESULT_DATA)
         if (resultData == null) {
           reportStartFailure("Missing MediaProjection consent data.")
         } else {
-          startRecording(resultCode, resultData)
+          startRecording(resultCode, resultData, audio)
         }
       }
       ACTION_STOP -> finishRecording(systemStopped = false)
@@ -79,7 +87,7 @@ class ScreenRecordService : Service() {
     return START_NOT_STICKY
   }
 
-  private fun startAsForeground() {
+  private fun startAsForeground(withAudio: Boolean) {
     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       manager.createNotificationChannel(
@@ -88,12 +96,19 @@ class ScreenRecordService : Service() {
     }
     val notification: Notification = Notification.Builder(this, CHANNEL_ID)
       .setContentTitle("TWK Participate")
-      .setContentText("Your test session is being recorded")
+      .setContentText(
+        if (withAudio) "Your screen and microphone are being recorded"
+        else "Your test session is being recorded"
+      )
       .setSmallIcon(android.R.drawable.presence_video_online)
       .setOngoing(true)
       .build()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+      // The service must advertise every capture type it uses; add the
+      // microphone type when audio is on so Android 14+ permits the mic.
+      var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+      if (withAudio) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+      startForeground(NOTIFICATION_ID, notification, type)
     } else {
       startForeground(NOTIFICATION_ID, notification)
     }
@@ -114,7 +129,7 @@ class ScreenRecordService : Service() {
     }
   }
 
-  private fun startRecording(resultCode: Int, resultData: Intent) {
+  private fun startRecording(resultCode: Int, resultData: Intent, withAudio: Boolean) {
     try {
       cleanupStaleRecordings()
       val projectionManager =
@@ -137,12 +152,21 @@ class ScreenRecordService : Service() {
       val recorder =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(this)
         else @Suppress("DEPRECATION") MediaRecorder()
+      // MediaRecorder state machine: sources must be set before the output
+      // format, encoders after it. Audio is added only when the participant
+      // opted in (mic permission already verified by the caller).
+      if (withAudio) recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
       recorder.setVideoSource(MediaRecorder.VideoSource.SURFACE)
       recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
       recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
       recorder.setVideoSize(width, height)
       recorder.setVideoFrameRate(30)
       recorder.setVideoEncodingBitRate(6_000_000)
+      if (withAudio) {
+        recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+        recorder.setAudioEncodingBitRate(128_000)
+        recorder.setAudioSamplingRate(44_100)
+      }
       recorder.setOutputFile(file.absolutePath)
       recorder.prepare()
       mediaRecorder = recorder
@@ -216,6 +240,9 @@ class ScreenRecordService : Service() {
     windowManager.defaultDisplay.getRealMetrics(metrics)
     return metrics
   }
+
+  private fun hasMicPermission(): Boolean =
+    checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
   override fun onDestroy() {
     if (isRecording) finishRecording(systemStopped = true)

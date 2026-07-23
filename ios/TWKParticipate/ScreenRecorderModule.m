@@ -5,7 +5,8 @@
 RCT_EXTERN_METHOD(isAvailable:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(startRecording:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(startRecording:(BOOL)withAudio
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(stopRecording:(RCTPromiseResolveBlock)resolve

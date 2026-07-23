@@ -15,6 +15,7 @@ export function ListRow({
   body,
   value,
   chevron = false,
+  control,
   last = false,
 }: {
   /** Feather icon name, e.g. "video", "smartphone". */
@@ -25,6 +26,8 @@ export function ListRow({
   value?: string;
   /** Show a trailing chevron. */
   chevron?: boolean;
+  /** Trailing interactive control (e.g. a Toggle) — replaces value/chevron. */
+  control?: React.ReactNode;
   last?: boolean;
 }) {
   const { colors } = useTheme();
@@ -35,8 +38,12 @@ export function ListRow({
         <Text style={[type.h3, { color: colors.ink }]}>{title}</Text>
         {body ? <Text style={[type.body, { color: colors.ink3, marginTop: 2 }]}>{body}</Text> : null}
       </View>
-      {value ? <Text style={[styles.value, { color: colors.ink4 }]}>{value}</Text> : null}
-      {chevron ? <Feather name="chevron-right" size={18} color={colors.ink4} /> : null}
+      {control ?? (
+        <>
+          {value ? <Text style={[styles.value, { color: colors.ink4 }]}>{value}</Text> : null}
+          {chevron ? <Feather name="chevron-right" size={18} color={colors.ink4} /> : null}
+        </>
+      )}
     </View>
   );
 }

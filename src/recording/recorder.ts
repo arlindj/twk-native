@@ -37,16 +37,17 @@ export async function recorderAvailable(): Promise<boolean> {
 /**
  * Starts a new recording segment; throws when the user denies the OS
  * permission. `segment` is the 0-based index (segments recorded so far).
+ * `withAudio` also records the microphone (think-aloud) for this segment.
  */
-export async function startSessionRecording(segment: number): Promise<void> {
+export async function startSessionRecording(segment: number, withAudio: boolean): Promise<void> {
   setState('preparing');
   try {
     setState('permission_required');
-    await ScreenRecorder.startRecording();
+    await ScreenRecorder.startRecording(withAudio);
     startedAtMs = Date.now();
     segmentIndex = segment;
     markRecordingStarted(segment);
-    track('recording_started', { meta: { segment } });
+    track('recording_started', { meta: { segment, audio: withAudio } });
     setState('recording');
   } catch (err) {
     setState('idle');

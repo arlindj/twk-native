@@ -14,8 +14,13 @@ import { NativeModules } from 'react-native';
 
 export interface NativeScreenRecorder {
   isAvailable(): Promise<boolean>;
-  /** Resolves when recording is confirmed started (after OS consent). */
-  startRecording(): Promise<void>;
+  /**
+   * Resolves when recording is confirmed started (after OS consent).
+   * `withAudio` also captures the microphone (think-aloud) — the mic is
+   * only enabled when the participant consented to audio and, on Android,
+   * granted the runtime RECORD_AUDIO permission.
+   */
+  startRecording(withAudio: boolean): Promise<void>;
   /** Resolves with the local file URI of the finished mp4. */
   stopRecording(): Promise<string>;
   /** Discards an in-flight recording without producing a file. */
@@ -30,7 +35,7 @@ class MockRecorder implements NativeScreenRecorder {
   async isAvailable() {
     return false;
   }
-  async startRecording() {
+  async startRecording(_withAudio: boolean) {
     throw new Error('Screen recording is not available in this environment.');
   }
   async stopRecording(): Promise<string> {

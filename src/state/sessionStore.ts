@@ -151,6 +151,23 @@ async function requestNotificationPermission() {
   }
 }
 
+/**
+ * Microphone permission for think-aloud audio. On Android the runtime
+ * RECORD_AUDIO grant is required before the recorder can capture audio; a
+ * denial is not fatal — the segment records video only. On iOS ReplayKit
+ * asks for the mic inside its own consent dialog when recording starts, so
+ * there is nothing to request up front (returns true = "let ReplayKit ask").
+ */
+async function requestMicPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    return res === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 export interface SegmentedUploadProgress extends UploadProgress {
   /** 1-based segment being uploaded and the total count. */
   segment: number;
@@ -164,6 +181,9 @@ interface SessionSnapshot {
   phase: Phase;
   currentTaskIndex: number;
   recordingEnabled: boolean;
+  audioEnabled: boolean;
+  screenRecordingConsent: boolean;
+  audioRecordingConsent: boolean;
   pendingSegments: FinishedRecording[];
   lostSegments: number;
 }
@@ -194,7 +214,14 @@ interface SessionState {
   pendingQuestions: QuestionBlock[];
   answers: AnswerPayload[];
   participantProfile?: ParticipantProfile;
+  /** Effective screen recording for this session (device can + participant kept it on). */
   recordingEnabled: boolean;
+  /** Effective microphone capture for this session (rides screen recording). */
+  audioEnabled: boolean;
+  /** Participant's consent toggle for screen recording (default on). */
+  screenRecordingConsent: boolean;
+  /** Participant's consent toggle for think-aloud audio (default on). */
+  audioRecordingConsent: boolean;
   /** True while the recorder is starting/stopping a segment. */
   taskBusy: boolean;
   uploadProgress?: SegmentedUploadProgress;
@@ -210,6 +237,8 @@ interface SessionState {
   resolveFromToken: (testToken: string, apiOverride?: string) => Promise<void>;
   acceptConsent: () => Promise<void>;
   submitIntake: (fields: Omit<ParticipantProfile, 'participantId'>) => Promise<void>;
+  setScreenRecordingConsent: (on: boolean) => void;
+  setAudioRecordingConsent: (on: boolean) => void;
   grantRecording: () => Promise<void>;
   skipRecordingUnavailable: () => void;
   /** Step back through the pre-test setup phases (consent → intake → permission). */
@@ -224,12 +253,25 @@ interface SessionState {
   reset: () => void;
 }
 
-/** After consent (and optional intake), enter recording permission or first task. */
-function advancePastIntake(set: (partial: Partial<SessionState>) => void, bootstrap: BootstrapPayload) {
-  if (bootstrap.recordingRequired) {
+/**
+ * After consent (and optional intake), enter the recording permission
+ * checkpoint or go straight to the first task. Screen recording is
+ * requested only when the study asks for it AND the participant kept the
+ * consent toggle on — opting out skips the checkpoint and runs the session
+ * without video (taps, events and answers are still full evidence).
+ */
+function advancePastIntake(
+  set: (partial: Partial<SessionState>) => void,
+  get: () => SessionState,
+  bootstrap: BootstrapPayload,
+) {
+  if (bootstrap.recordingRequired && get().screenRecordingConsent) {
     set({ phase: 'permission' });
   } else {
-    set({ phase: 'task_intro', recordingEnabled: false });
+    if (bootstrap.recordingRequired) {
+      track('recording_skipped', { meta: { reason: 'user_opted_out' } });
+    }
+    set({ phase: 'task_intro', recordingEnabled: false, audioEnabled: false });
   }
 }
 
@@ -272,6 +314,9 @@ function persistSnapshot(s: SessionState) {
     phase: s.phase === 'interrupted' ? (s.interruptedFrom ?? 'task_intro') : s.phase,
     currentTaskIndex: s.currentTaskIndex,
     recordingEnabled: s.recordingEnabled,
+    audioEnabled: s.audioEnabled,
+    screenRecordingConsent: s.screenRecordingConsent,
+    audioRecordingConsent: s.audioRecordingConsent,
     pendingSegments: s.pendingSegments,
     lostSegments: s.lostSegments,
   };
@@ -288,6 +333,9 @@ export const useSession = create<SessionState>((set, get) => ({
   pendingQuestions: [],
   answers: [],
   recordingEnabled: false,
+  audioEnabled: false,
+  screenRecordingConsent: true,
+  audioRecordingConsent: true,
   taskBusy: false,
   participantProfile: undefined,
   pendingSegments: [],
@@ -341,6 +389,9 @@ export const useSession = create<SessionState>((set, get) => ({
           testToken,
           currentTaskIndex: snap.currentTaskIndex,
           recordingEnabled: snap.recordingEnabled,
+          audioEnabled: snap.audioEnabled ?? false,
+          screenRecordingConsent: snap.screenRecordingConsent ?? true,
+          audioRecordingConsent: snap.audioRecordingConsent ?? true,
           pendingSegments,
           lostSegments,
           pendingQuestions,
@@ -415,7 +466,7 @@ export const useSession = create<SessionState>((set, get) => ({
     if (bootstrap.intake?.enabled) {
       set({ phase: 'intake' });
     } else {
-      advancePastIntake(set, bootstrap);
+      advancePastIntake(set, get, bootstrap);
     }
   },
 
@@ -442,16 +493,21 @@ export const useSession = create<SessionState>((set, get) => ({
         meta: { participantId, offline: true },
       });
     }
-    advancePastIntake(set, bootstrap);
+    advancePastIntake(set, get, bootstrap);
   },
+
+  /** Participant's consent toggles on the "Before you start" screen. */
+  setScreenRecordingConsent: (on) => set({ screenRecordingConsent: on }),
+  setAudioRecordingConsent: (on) => set({ audioRecordingConsent: on }),
 
   /**
    * Recording permission checkpoint. The actual OS consent dialog shows
    * when the first task starts (that's when capture begins) — here we
-   * only verify the device can record and reserve the recording slot.
+   * only verify the device can record, request the microphone when the
+   * participant opted into audio, and reserve the recording slot.
    */
   grantRecording: async () => {
-    const { sessionId } = get();
+    const { sessionId, audioRecordingConsent } = get();
     if (!sessionId) return;
     await requestNotificationPermission();
     const available = await recorderAvailable();
@@ -460,12 +516,16 @@ export const useSession = create<SessionState>((set, get) => ({
       set({ phase: 'permission_denied', error: 'recording_unavailable' });
       return;
     }
+    // Think-aloud audio rides the screen-recording session. Ask for the OS
+    // mic permission only when the participant kept audio on; a denial just
+    // drops audio for the session — screen recording still proceeds.
+    const audioEnabled = audioRecordingConsent ? await requestMicPermission() : false;
     try {
       await api.startRecordingSlot(sessionId);
     } catch {
       // Slot reservation also rides the event stream; not fatal.
     }
-    set({ phase: 'task_intro', recordingEnabled: true, error: undefined });
+    set({ phase: 'task_intro', recordingEnabled: true, audioEnabled, error: undefined });
   },
 
   /**
@@ -477,7 +537,7 @@ export const useSession = create<SessionState>((set, get) => ({
    */
   skipRecordingUnavailable: () => {
     track('recording_skipped', { meta: { reason: get().error ?? 'unknown' } });
-    set({ phase: 'task_intro', recordingEnabled: false, error: undefined });
+    set({ phase: 'task_intro', recordingEnabled: false, audioEnabled: false, error: undefined });
   },
 
   /**
@@ -496,7 +556,7 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   beginTask: async () => {
-    const { bootstrap, currentTaskIndex, recordingEnabled, pendingSegments, taskBusy } = get();
+    const { bootstrap, currentTaskIndex, recordingEnabled, audioEnabled, pendingSegments, taskBusy } = get();
     const task = bootstrap?.tasks[currentTaskIndex];
     if (!task || taskBusy) return;
 
@@ -505,7 +565,7 @@ export const useSession = create<SessionState>((set, get) => ({
     if (recordingEnabled && !isRecordingActive()) {
       set({ taskBusy: true });
       try {
-        await startSessionRecording(pendingSegments.length);
+        await startSessionRecording(pendingSegments.length, audioEnabled);
       } catch {
         set({ taskBusy: false, phase: 'permission_denied', error: 'permission_denied' });
         return;
@@ -647,7 +707,7 @@ export const useSession = create<SessionState>((set, get) => ({
 
   /** Continue after an interruption; a fresh segment starts with the next task screen. */
   resumeTest: async () => {
-    const { interruptedFrom, recordingEnabled, pendingSegments } = get();
+    const { interruptedFrom, recordingEnabled, audioEnabled, pendingSegments } = get();
     const returnTo = interruptedFrom ?? 'task_intro';
     track('test_resumed', { meta: { toPhase: returnTo } });
 
@@ -656,7 +716,7 @@ export const useSession = create<SessionState>((set, get) => ({
     // (OS requirement — one consent per projection session).
     if (returnTo === 'testing' && recordingEnabled) {
       try {
-        await startSessionRecording(pendingSegments.length);
+        await startSessionRecording(pendingSegments.length, audioEnabled);
       } catch {
         set({ phase: 'permission_denied', error: 'permission_denied', interruptedFrom: undefined });
         return;
@@ -759,6 +819,9 @@ export const useSession = create<SessionState>((set, get) => ({
       answers: [],
       participantProfile: undefined,
       recordingEnabled: false,
+      audioEnabled: false,
+      screenRecordingConsent: true,
+      audioRecordingConsent: true,
       taskBusy: false,
       uploadProgress: undefined,
       pendingSegments: [],

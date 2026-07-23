@@ -24,6 +24,8 @@ class ScreenRecorderModule(private val reactContext: ReactApplicationContext) :
 
   private var startPromise: Promise? = null
   private var stopPromise: Promise? = null
+  /** Whether the pending start should also capture the microphone. */
+  private var pendingWithAudio = false
 
   init {
     reactContext.addActivityEventListener(this)
@@ -42,12 +44,13 @@ class ScreenRecorderModule(private val reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  fun startRecording(promise: Promise) {
-    val activity = currentActivity
+  fun startRecording(withAudio: Boolean, promise: Promise) {
+    val activity = reactContext.getCurrentActivity()
       ?: return promise.reject("E_NO_ACTIVITY", "No foreground activity.")
     if (ScreenRecordService.isRecording) {
       return promise.reject("E_ALREADY_RECORDING", "A recording is already in progress.")
     }
+    pendingWithAudio = withAudio
     startPromise = promise
     ScreenRecordService.onStarted = { error ->
       val p = startPromise
@@ -101,7 +104,7 @@ class ScreenRecorderModule(private val reactContext: ReactApplicationContext) :
   /** Replaces expo-keep-awake: the prototype player must not let the screen sleep. */
   @ReactMethod
   fun setKeepScreenOn(on: Boolean) {
-    val activity = currentActivity ?: return
+    val activity = reactContext.getCurrentActivity() ?: return
     UiThreadUtil.runOnUiThread {
       if (on) {
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -124,6 +127,7 @@ class ScreenRecorderModule(private val reactContext: ReactApplicationContext) :
       action = ScreenRecordService.ACTION_START
       putExtra(ScreenRecordService.EXTRA_RESULT_CODE, resultCode)
       putExtra(ScreenRecordService.EXTRA_RESULT_DATA, data)
+      putExtra(ScreenRecordService.EXTRA_WITH_AUDIO, pendingWithAudio)
     }
     reactContext.startForegroundService(intent)
   }
