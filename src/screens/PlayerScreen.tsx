@@ -132,7 +132,7 @@ export function PlayerScreen() {
     const activeTask = bootstrap?.tasks[index];
     track('prototype_navigation', {
       taskId: activeTask?.id,
-      meta: { prototypeScreenId: screenId, source },
+      meta: { prototypeScreenId: screenId, source, missionIndex: index },
     });
     const goals = activeTask?.successScreenIds ?? [];
     if (activeTask && !autoCompletedRef.current && goals.includes(screenId)) {
@@ -156,6 +156,10 @@ export function PlayerScreen() {
 
   const doCapture = async () => {
     if (!sessionId || captureBusy.current || !captureAreaRef.current) return;
+    // Skip until the bridge has reported a real prototype screen id — a frame
+    // captured under the placeholder 'entry' id pollutes the heatmap bases /
+    // Mission Screens grid with a bogus "entry" screen.
+    if (currentScreenId.current === 'entry') return;
     captureBusy.current = true;
     const atMs = sessionElapsedMs();
     try {
@@ -267,6 +271,7 @@ export function PlayerScreen() {
                     source: 'webview',
                     prototypeScreenId: msg.screenId ?? currentScreenId.current,
                     interactive: !!msg.interactive,
+                    missionIndex: index,
                   },
                 });
               }

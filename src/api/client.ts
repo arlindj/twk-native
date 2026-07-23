@@ -361,22 +361,41 @@ export async function sendEventBatch(sessionId: string, _idempotencyKey: string,
 }
 
 function toBeat(e: SessionEvent): Record<string, unknown> | null {
+  // `mi` (mission index) lets synth segment beats into per-mission runs — the
+  // mobile session clock is monotonic across missions (never resets like the
+  // web embed remount), so the server's t_ms-drop heuristic can't split them.
+  const mi = typeof e.meta?.missionIndex === 'number' ? e.meta.missionIndex : undefined;
   if (e.type === 'tap') {
+    const screen = typeof e.meta?.prototypeScreenId === 'string' ? e.meta.prototypeScreenId : '';
     return {
       kind: 'click',
       x: e.normalizedX != null ? Math.round(e.normalizedX * (e.screenWidth ?? 390)) : 0,
       y: e.normalizedY != null ? Math.round(e.normalizedY * (e.screenHeight ?? 844)) : 0,
       vw: e.screenWidth ?? 390,
       vh: e.screenHeight ?? 844,
-      path: typeof e.meta?.prototypeScreenId === 'string' ? e.meta.prototypeScreenId : '',
+      path: screen,
+      // `screen` -> screen_node_id: the graph-model Analyze surfaces (mission
+      // screens, paths, heatmap modal, misclick) key clicks by node id.
+      screen,
       label: '',
       t: e.timestampMs,
+      ...(mi != null ? { mi } : {}),
     };
   }
   if (e.type === 'prototype_navigation') {
     const screenId = e.meta?.prototypeScreenId;
+    // URL-only navigations (no prototype screen id) carry no node — skip.
     if (typeof screenId !== 'string') return null;
-    return { kind: 'navigate', path: screenId, t: e.timestampMs };
+    return {
+      kind: 'navigate',
+      path: screenId,
+      // screen + screen_enter drive the Analyze path reconstruction, screen
+      // grid, funnel and navigation diagram (all read graph_event/screen_node_id).
+      screen: screenId,
+      event: 'screen_enter',
+      t: e.timestampMs,
+      ...(mi != null ? { mi } : {}),
+    };
   }
   return null;
 }

@@ -57,7 +57,7 @@ export function GraphPlayerScreen() {
     setCurrentNodeId(nodeId);
     track('prototype_navigation', {
       taskId: task.id,
-      meta: { prototypeScreenId: nodeId, source: 'graph' },
+      meta: { prototypeScreenId: nodeId, source: 'graph', missionIndex: index },
     });
     const goals = task.successScreenIds ?? [];
     if (!autoCompletedRef.current && goals.includes(nodeId)) {
@@ -76,7 +76,7 @@ export function GraphPlayerScreen() {
       normalizedY: screen ? Number(((h.y + h.h / 2) / screen.height).toFixed(4)) : undefined,
       screenWidth: screen?.width,
       screenHeight: screen?.height,
-      meta: { source: 'graph', prototypeScreenId: currentNodeId, interactive: true },
+      meta: { source: 'graph', prototypeScreenId: currentNodeId, interactive: true, missionIndex: index },
     });
     if (h.destinationNodeId) onScreenChange(h.destinationNodeId);
   };

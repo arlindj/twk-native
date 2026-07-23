@@ -18,7 +18,10 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  * Query params (api) merge into the route params automatically.
  */
 const linking = {
-  prefixes: ['twk://', 'https://test.tawakkalnaos.app'],
+  // synth.nacew.com is the live web app whose "Test on a phone" QR encodes
+  // https://synth.nacew.com/t/<code>; test.tawakkalnaos.app is the legacy
+  // universal-link host. Both resolve to the same TestRunner route.
+  prefixes: ['twk://', 'https://synth.nacew.com', 'https://test.tawakkalnaos.app'],
   config: {
     screens: {
       Home: '',
