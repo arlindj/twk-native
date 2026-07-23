@@ -366,7 +366,10 @@ function toBeat(e: SessionEvent): Record<string, unknown> | null {
   // web embed remount), so the server's t_ms-drop heuristic can't split them.
   const mi = typeof e.meta?.missionIndex === 'number' ? e.meta.missionIndex : undefined;
   if (e.type === 'tap') {
-    const screen = typeof e.meta?.prototypeScreenId === 'string' ? e.meta.prototypeScreenId : '';
+    const rawScreen = typeof e.meta?.prototypeScreenId === 'string' ? e.meta.prototypeScreenId : '';
+    // 'entry' is the placeholder id before the bridge reports the first real
+    // prototype screen — don't tag clicks with it (keeps it out of analytics).
+    const screen = rawScreen === 'entry' ? '' : rawScreen;
     return {
       kind: 'click',
       x: e.normalizedX != null ? Math.round(e.normalizedX * (e.screenWidth ?? 390)) : 0,
