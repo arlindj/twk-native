@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { colors, radius, spacing, type } from '../../theme';
+import { radius, spacing, type, useTheme } from '../../theme';
 import { QuestionBlock } from '../../types';
 
 /**
@@ -20,6 +20,9 @@ export function QuestionRenderer({
   value: AnswerValue | undefined;
   onChange: (v: AnswerValue) => void;
 }) {
+  // Called unconditionally (Rules of Hooks) — question.type can change across
+  // renders of this same component instance as the participant advances.
+  const { colors } = useTheme();
   switch (question.type) {
     case 'open_text':
     case 'open_question': // synth's name for the same block
@@ -70,7 +73,7 @@ export function QuestionRenderer({
       // not know. Render an explainer instead of a blank screen, and let
       // isAnswered() treat it as answered so the participant is never stuck.
       return (
-        <Text style={type.caption}>
+        <Text style={[type.caption, { color: colors.ink3 }]}>
           This question isn’t supported by this app version — tap Next to continue.
         </Text>
       );
@@ -96,13 +99,17 @@ function OpenText({
   placeholder?: string;
   onChange: (v: string) => void;
 }) {
+  const { colors } = useTheme();
   return (
     <TextInput
-      style={styles.input}
+      style={[
+        styles.input,
+        { backgroundColor: colors.card, borderColor: colors.line, color: colors.ink },
+      ]}
       value={value}
       onChangeText={onChange}
       placeholder={placeholder || 'Type your answer…'}
-      placeholderTextColor={colors.inkFaint}
+      placeholderTextColor={colors.ink4}
       multiline
       textAlignVertical="top"
     />
@@ -127,13 +134,17 @@ function SimpleInput({
   placeholder?: string;
   onChange: (v: string) => void;
 }) {
+  const { colors } = useTheme();
   return (
     <TextInput
-      style={styles.singleInput}
+      style={[
+        styles.singleInput,
+        { backgroundColor: colors.card, borderColor: colors.line, color: colors.ink },
+      ]}
       value={value}
       onChangeText={onChange}
       placeholder={placeholder || 'Your answer…'}
-      placeholderTextColor={colors.inkFaint}
+      placeholderTextColor={colors.ink4}
       keyboardType={KEYBOARD_BY_INPUT_TYPE[inputType]}
       autoCapitalize={inputType === 'email' ? 'none' : 'sentences'}
       autoCorrect={inputType === 'text'}
@@ -147,17 +158,21 @@ function SimpleInput({
  * stripped) rather than shipping a markdown engine for one block type.
  */
 function ContextScreen({ body }: { body: string }) {
+  const { colors } = useTheme();
   const plain = body
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/\*(.+?)\*/g, '$1');
   return (
-    <View style={styles.contextBox}>
+    <View style={[styles.contextBox, { backgroundColor: colors.surface50 }]}>
       {plain
         .split(/\n{2,}/)
         .filter((p) => p.trim().length > 0)
         .map((paragraph, i) => (
-          <Text key={i} style={[type.body, i > 0 && { marginTop: spacing.sm }]}>
+          <Text
+            key={i}
+            style={[type.body, { color: colors.ink3 }, i > 0 && { marginTop: spacing.sm }]}
+          >
             {paragraph.trim()}
           </Text>
         ))}
@@ -184,6 +199,7 @@ function OpinionScale({
   value?: number;
   onChange: (v: number) => void;
 }) {
+  const { colors } = useTheme();
   const steps = [];
   for (let i = min; i <= max; i++) steps.push(i);
   // Emoji style maps 1:1 onto a 5-step scale; anything else falls back to
@@ -192,22 +208,35 @@ function OpinionScale({
   return (
     <View>
       <View style={styles.scaleRow}>
-        {steps.map((s, i) => (
-          <Pressable
-            key={s}
-            onPress={() => onChange(s)}
-            style={[styles.scaleItem, value === s && styles.scaleItemActive]}
-          >
-            <Text style={[styles.scaleText, !useEmoji && value === s && styles.scaleTextActive]}>
-              {useEmoji ? SCALE_EMOJIS[i] : s}
-            </Text>
-          </Pressable>
-        ))}
+        {steps.map((s, i) => {
+          const active = value === s;
+          return (
+            <Pressable
+              key={s}
+              onPress={() => onChange(s)}
+              style={[
+                styles.scaleItem,
+                { borderColor: colors.line, backgroundColor: colors.card },
+                active && { backgroundColor: colors.brand, borderColor: colors.brand },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.scaleText,
+                  { color: colors.ink },
+                  !useEmoji && active && { color: colors.onBrand },
+                ]}
+              >
+                {useEmoji ? SCALE_EMOJIS[i] : s}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
       {(minLabel || maxLabel) && (
         <View style={styles.scaleLabels}>
-          <Text style={type.caption}>{minLabel ?? ''}</Text>
-          <Text style={type.caption}>{maxLabel ?? ''}</Text>
+          <Text style={[type.caption, { color: colors.ink3 }]}>{minLabel ?? ''}</Text>
+          <Text style={[type.caption, { color: colors.ink3 }]}>{maxLabel ?? ''}</Text>
         </View>
       )}
     </View>
@@ -227,6 +256,7 @@ function MultipleChoice({
   value: string[];
   onChange: (v: string[]) => void;
 }) {
+  const { colors } = useTheme();
   // The answer array mixes picked options with an optional free-text
   // "Other" entry (any value that isn't one of the options). The typed
   // text only enters the array once non-empty, so an empty Other never
@@ -266,12 +296,31 @@ function MultipleChoice({
           <Pressable
             key={opt}
             onPress={() => toggle(opt)}
-            style={[styles.choice, selected && styles.choiceActive]}
+            style={[
+              styles.choice,
+              { backgroundColor: colors.card, borderColor: colors.line },
+              selected && { borderColor: colors.brand, backgroundColor: colors.brand50 },
+            ]}
           >
-            <View style={[styles.radio, selected && styles.radioActive, multiSelect && styles.checkbox]}>
-              {selected ? <View style={[styles.radioDot, multiSelect && styles.checkboxDot]} /> : null}
+            <View
+              style={[
+                styles.radio,
+                { borderColor: colors.ink4 },
+                selected && { borderColor: colors.brand },
+                multiSelect && styles.checkbox,
+              ]}
+            >
+              {selected ? (
+                <View
+                  style={[
+                    styles.radioDot,
+                    { backgroundColor: colors.brand },
+                    multiSelect && styles.checkboxDot,
+                  ]}
+                />
+              ) : null}
             </View>
-            <Text style={[type.h3, { flex: 1, fontWeight: '500' }]}>{opt}</Text>
+            <Text style={[type.h3, { color: colors.ink, flex: 1, fontWeight: '500' }]}>{opt}</Text>
           </Pressable>
         );
       })}
@@ -279,23 +328,45 @@ function MultipleChoice({
         <>
           <Pressable
             onPress={toggleOther}
-            style={[styles.choice, otherSelected && styles.choiceActive]}
+            style={[
+              styles.choice,
+              { backgroundColor: colors.card, borderColor: colors.line },
+              otherSelected && { borderColor: colors.brand, backgroundColor: colors.brand50 },
+            ]}
           >
-            <View style={[styles.radio, otherSelected && styles.radioActive, multiSelect && styles.checkbox]}>
-              {otherSelected ? <View style={[styles.radioDot, multiSelect && styles.checkboxDot]} /> : null}
+            <View
+              style={[
+                styles.radio,
+                { borderColor: colors.ink4 },
+                otherSelected && { borderColor: colors.brand },
+                multiSelect && styles.checkbox,
+              ]}
+            >
+              {otherSelected ? (
+                <View
+                  style={[
+                    styles.radioDot,
+                    { backgroundColor: colors.brand },
+                    multiSelect && styles.checkboxDot,
+                  ]}
+                />
+              ) : null}
             </View>
-            <Text style={[type.h3, { flex: 1, fontWeight: '500' }]}>Other</Text>
+            <Text style={[type.h3, { color: colors.ink, flex: 1, fontWeight: '500' }]}>Other</Text>
           </Pressable>
           {otherSelected ? (
             <TextInput
-              style={styles.singleInput}
+              style={[
+                styles.singleInput,
+                { backgroundColor: colors.card, borderColor: colors.line, color: colors.ink },
+              ]}
               value={otherText}
               onChangeText={(t) => {
                 setOtherText(t);
                 commit(multiSelect ? optionValues : [], true, t);
               }}
               placeholder="Tell us more…"
-              placeholderTextColor={colors.inkFaint}
+              placeholderTextColor={colors.ink4}
               autoFocus
             />
           ) : null}
@@ -306,20 +377,28 @@ function MultipleChoice({
 }
 
 function YesNo({ value, onChange }: { value?: boolean; onChange: (v: boolean) => void }) {
+  const { colors } = useTheme();
   return (
     <View style={{ flexDirection: 'row', gap: spacing.sm }}>
       {[
         { label: 'Yes', v: true },
         { label: 'No', v: false },
-      ].map(({ label, v }) => (
-        <Pressable
-          key={label}
-          onPress={() => onChange(v)}
-          style={[styles.choice, { flex: 1, justifyContent: 'center' }, value === v && styles.choiceActive]}
-        >
-          <Text style={[type.h3, value === v && { color: colors.brandDark }]}>{label}</Text>
-        </Pressable>
-      ))}
+      ].map(({ label, v }) => {
+        const selected = value === v;
+        return (
+          <Pressable
+            key={label}
+            onPress={() => onChange(v)}
+            style={[
+              styles.choice,
+              { flex: 1, justifyContent: 'center', backgroundColor: colors.card, borderColor: colors.line },
+              selected && { borderColor: colors.brand, backgroundColor: colors.brand50 },
+            ]}
+          >
+            <Text style={[type.h3, { color: selected ? colors.brand700 : colors.ink }]}>{label}</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -340,26 +419,19 @@ export function isAnswered(question: QuestionBlock, value: AnswerValue | undefin
 const styles = StyleSheet.create({
   input: {
     minHeight: 120,
-    backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.line,
     padding: spacing.md,
     fontSize: 16,
-    color: colors.ink,
   },
   singleInput: {
-    backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.line,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.ink,
   },
   contextBox: {
-    backgroundColor: colors.surface,
     borderRadius: radius.md,
     padding: spacing.md,
   },
@@ -369,14 +441,10 @@ const styles = StyleSheet.create({
     aspectRatio: 0.9,
     borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scaleItemActive: { backgroundColor: colors.brand, borderColor: colors.brand },
-  scaleText: { fontSize: 16, fontWeight: '600', color: colors.ink },
-  scaleTextActive: { color: '#fff' },
+  scaleText: { fontSize: 16, fontWeight: '600' },
   scaleLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -386,24 +454,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.card,
     borderRadius: radius.md,
     borderWidth: 1.5,
-    borderColor: colors.line,
     padding: spacing.md,
   },
-  choiceActive: { borderColor: colors.brand, backgroundColor: colors.brandLight },
   radio: {
     width: 22,
     height: 22,
     borderRadius: 11,
     borderWidth: 2,
-    borderColor: colors.inkFaint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioActive: { borderColor: colors.brand },
-  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.brand },
+  radioDot: { width: 10, height: 10, borderRadius: 5 },
   checkbox: { borderRadius: 6 },
   checkboxDot: { borderRadius: 2 },
 });

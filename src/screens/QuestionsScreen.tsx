@@ -5,7 +5,7 @@ import { AnswerValue, isAnswered, QuestionRenderer } from '../components/questio
 import { Button, ProgressBar, SectionLabel } from '../components/ui';
 import { sessionElapsedMs } from '../events/eventQueue';
 import { useSession } from '../state/sessionStore';
-import { colors, spacing, type } from '../theme';
+import { spacing, type, useTheme } from '../theme';
 import { AnswerPayload } from '../types';
 
 /**
@@ -13,6 +13,7 @@ import { AnswerPayload } from '../types';
  * collected locally, then submitted as a batch for the checkpoint.
  */
 export function QuestionsScreen() {
+  const { colors } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const questions = useSession((s) => s.pendingQuestions);
   const submitAnswers = useSession((s) => s.submitAnswers);
@@ -56,7 +57,7 @@ export function QuestionsScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.paper }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -70,12 +71,14 @@ export function QuestionsScreen() {
                 : `Final questions · ${index + 1}/${questions.length}`}
             </SectionLabel>
           </View>
-          <Text style={type.h1}>{q.title}</Text>
+          <Text style={[type.h1, { color: colors.ink }]}>{q.title}</Text>
           {q.description ? (
-            <Text style={[type.body, { marginTop: spacing.xs }]}>{q.description}</Text>
+            <Text style={[type.body, { color: colors.ink3, marginTop: spacing.xs }]}>
+              {q.description}
+            </Text>
           ) : null}
           {q.type !== 'context_screen' ? (
-            <Text style={[type.caption, { marginVertical: spacing.sm }]}>
+            <Text style={[type.caption, { color: colors.ink4, marginVertical: spacing.sm }]}>
               {q.required ? 'Required' : 'Optional'}
             </Text>
           ) : (

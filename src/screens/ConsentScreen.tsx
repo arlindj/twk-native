@@ -3,20 +3,21 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Callout, ListRow, PageHeader, Pill, SectionLabel } from '../components/ui';
 import { useSession } from '../state/sessionStore';
-import { colors, spacing, type } from '../theme';
+import { spacing, type, useTheme } from '../theme';
 
 /**
  * Consent — must be explicit before any recording. Explains exactly
  * what is captured: screen, taps, answers, device metadata.
  */
 export function ConsentScreen() {
+  const { colors } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const acceptConsent = useSession((s) => s.acceptConsent);
   const [busy, setBusy] = useState(false);
   if (!bootstrap) return null;
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Pill label={bootstrap.studyName} tone="muted" />
         <View style={{ marginTop: spacing.md }}>
@@ -45,11 +46,11 @@ export function ConsentScreen() {
         />
 
         <Callout icon="lock" tone="brand" style={{ marginTop: spacing.md }}>
-          <Text style={[type.body, { color: colors.brandDark }]}>{bootstrap.consent.body}</Text>
+          <Text style={[type.body, { color: colors.brand700 }]}>{bootstrap.consent.body}</Text>
         </Callout>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { borderTopColor: colors.line }]}>
         <Button
           label="I agree — continue"
           loading={busy}
@@ -58,7 +59,7 @@ export function ConsentScreen() {
             await acceptConsent();
           }}
         />
-        <Text style={[type.caption, { textAlign: 'center', marginTop: spacing.sm }]}>
+        <Text style={[type.caption, { color: colors.ink3, textAlign: 'center', marginTop: spacing.sm }]}>
           Consent version {bootstrap.consent.version}
         </Text>
       </View>
@@ -67,13 +68,12 @@ export function ConsentScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { flex: 1 },
   scroll: { padding: spacing.lg },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
   },
 });

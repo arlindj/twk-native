@@ -3,20 +3,22 @@ import { ActivityIndicator, Text, View } from 'react-native';
 import { Button, Callout, PageHeader, Screen } from '../components/ui';
 import { resetToHome } from '../navigation';
 import { useSession } from '../state/sessionStore';
-import { colors, spacing, type } from '../theme';
+import { spacing, type, useTheme } from '../theme';
 
 export function ResolvingScreen() {
+  const { colors } = useTheme();
   return (
     <Screen>
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md }}>
         <ActivityIndicator size="large" color={colors.brand} />
-        <Text style={type.body}>Preparing your test…</Text>
+        <Text style={[type.body, { color: colors.ink3 }]}>Preparing your test…</Text>
       </View>
     </Screen>
   );
 }
 
 export function LinkErrorScreen() {
+  const { colors } = useTheme();
   const error = useSession((s) => s.error);
   const reset = useSession((s) => s.reset);
   return (
@@ -33,7 +35,7 @@ export function LinkErrorScreen() {
     >
       <PageHeader icon="link" title="This test can’t be opened" />
       <Callout icon="alert-triangle" tone="warning">
-        <Text style={type.body}>{error}</Text>
+        <Text style={[type.body, { color: colors.ink }]}>{error}</Text>
       </Callout>
     </Screen>
   );
@@ -45,6 +47,7 @@ export function LinkErrorScreen() {
  * the test is ever captured); resuming starts a fresh segment.
  */
 export function InterruptedScreen() {
+  const { colors } = useTheme();
   const resumeTest = useSession((s) => s.resumeTest);
   const recordingEnabled = useSession((s) => s.recordingEnabled);
   const [busy, setBusy] = React.useState(false);
@@ -72,7 +75,7 @@ export function InterruptedScreen() {
         }.`}
       />
       <Callout icon="play-circle">
-        <Text style={type.body}>
+        <Text style={[type.body, { color: colors.ink }]}>
           You can continue right where you left off.
           {recordingEnabled ? ' Recording will start again when you continue.' : ''}
         </Text>

@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
-import { colors, radius, spacing } from '../../theme';
+
+import { radius, spacing, useTheme } from '../../theme';
 
 /**
- * Callout block: monochrome line icon on the left, soft gray
- * background, no border. `tone` switches background + icon color for
- * warnings/errors.
+ * Callout block: monochrome line icon on the left, soft tinted background,
+ * no border — mirrors the web app's soft alert/tint patterns (bg-brand-50,
+ * bg-danger-soft, bg-warn-soft). `tone` switches background + icon color.
  */
 export function Callout({
   icon,
@@ -20,22 +21,23 @@ export function Callout({
   tone?: 'default' | 'brand' | 'danger' | 'warning';
   style?: ViewStyle;
 }) {
+  const { colors } = useTheme();
   const bg =
     tone === 'brand'
-      ? colors.brandLight
+      ? colors.brand50
       : tone === 'danger'
-        ? colors.dangerBg
+        ? colors.dangerSoft
         : tone === 'warning'
-          ? colors.warningBg
-          : colors.surface;
+          ? colors.warnSoft
+          : colors.surface50;
   const fg =
     tone === 'brand'
-      ? colors.brandDark
+      ? colors.brand700
       : tone === 'danger'
         ? colors.danger
         : tone === 'warning'
-          ? colors.warning
-          : colors.inkMuted;
+          ? colors.warn
+          : colors.ink3;
   return (
     <View style={[styles.callout, { backgroundColor: bg }, style]}>
       <Feather name={icon} size={18} color={fg} style={styles.icon} />

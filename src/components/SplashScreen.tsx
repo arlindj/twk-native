@@ -1,16 +1,17 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
-import { colors, spacing } from '../theme';
+import { Animated, Easing, StyleSheet, Text } from 'react-native';
+import { spacing, useTheme } from '../theme';
 
 /**
- * Animated splash shown on cold start, over a plain white canvas that
- * matches the native launch screen (so the handoff is seamless). The
- * brand mark scales + fades in, the wordmark follows, a short hold, then
- * the whole overlay fades out and calls onFinish.
+ * Animated splash shown on cold start, over a plain canvas that matches
+ * the native launch screen (so the handoff is seamless). The brand mark
+ * scales + fades in, the wordmark follows, a short hold, then the whole
+ * overlay fades out and calls onFinish.
  *
  * Uses only the built-in Animated API — no extra dependency.
  */
 export function SplashScreen({ onFinish }: { onFinish: () => void }) {
+  const { colors } = useTheme();
   const markScale = useRef(new Animated.Value(0.8)).current;
   const markOpacity = useRef(new Animated.Value(0)).current;
   const wordOpacity = useRef(new Animated.Value(0)).current;
@@ -51,13 +52,19 @@ export function SplashScreen({ onFinish }: { onFinish: () => void }) {
   }, [markOpacity, markScale, wordOpacity, overlayOpacity, onFinish]);
 
   return (
-    <Animated.View style={[styles.overlay, { opacity: overlayOpacity }]} pointerEvents="none">
+    <Animated.View
+      style={[styles.overlay, { backgroundColor: colors.paper, opacity: overlayOpacity }]}
+      pointerEvents="none"
+    >
       <Animated.View
-        style={[styles.mark, { opacity: markOpacity, transform: [{ scale: markScale }] }]}
+        style={[
+          styles.mark,
+          { backgroundColor: colors.brand, opacity: markOpacity, transform: [{ scale: markScale }] },
+        ]}
       >
-        <Text style={styles.markText}>T</Text>
+        <Text style={[styles.markText, { color: colors.onBrand }]}>T</Text>
       </Animated.View>
-      <Animated.Text style={[styles.word, { opacity: wordOpacity }]}>
+      <Animated.Text style={[styles.word, { color: colors.ink, opacity: wordOpacity }]}>
         TWK Participate
       </Animated.Text>
     </Animated.View>
@@ -71,7 +78,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -79,16 +85,14 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 18,
-    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  markText: { color: '#fff', fontSize: 38, fontWeight: '800' },
+  markText: { fontSize: 38, fontWeight: '800' },
   word: {
     marginTop: spacing.md,
     fontSize: 17,
     fontWeight: '700',
-    color: colors.ink,
     letterSpacing: -0.2,
   },
 });

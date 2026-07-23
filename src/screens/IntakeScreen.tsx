@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, PageHeader, Pill } from '../components/ui';
 import { useSession } from '../state/sessionStore';
-import { colors, radius, spacing, type } from '../theme';
+import { radius, spacing, type, useTheme } from '../theme';
 
 /**
  * Guest intake — no login. Tester self-reports name, age, and role so the
@@ -20,6 +20,7 @@ import { colors, radius, spacing, type } from '../theme';
  * bootstrap.intake (study-configurable).
  */
 export function IntakeScreen() {
+  const { colors } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const submitIntake = useSession((s) => s.submitIntake);
   const back = useSession((s) => s.back);
@@ -60,7 +61,7 @@ export function IntakeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -91,10 +92,10 @@ export function IntakeScreen() {
                   value={fullName}
                   onChangeText={setFullName}
                   placeholder="e.g. Sara Ahmed"
-                  placeholderTextColor={colors.inkFaint}
+                  placeholderTextColor={colors.ink4}
                   autoCapitalize="words"
                   autoCorrect={false}
-                  style={styles.input}
+                  style={[styles.input, { color: colors.ink, backgroundColor: colors.surface50 }]}
                   returnKeyType="next"
                 />
               </Field>
@@ -106,13 +107,15 @@ export function IntakeScreen() {
                   value={ageText}
                   onChangeText={(t) => setAgeText(t.replace(/[^0-9]/g, '').slice(0, 3))}
                   placeholder="e.g. 28"
-                  placeholderTextColor={colors.inkFaint}
+                  placeholderTextColor={colors.ink4}
                   keyboardType="number-pad"
-                  style={styles.input}
+                  style={[styles.input, { color: colors.ink, backgroundColor: colors.surface50 }]}
                   returnKeyType="next"
                 />
                 {ageText.length > 0 && !ageOk ? (
-                  <Text style={styles.hint}>Enter an age between 13 and 120.</Text>
+                  <Text style={[type.caption, { color: colors.danger }]}>
+                    Enter an age between 13 and 120.
+                  </Text>
                 ) : null}
               </Field>
             ) : null}
@@ -130,12 +133,17 @@ export function IntakeScreen() {
                           setCustomRole(false);
                           setRole(option);
                         }}
-                        style={[styles.chip, selected && styles.chipSelected]}
+                        style={[
+                          styles.chip,
+                          { borderColor: colors.line, backgroundColor: colors.card },
+                          selected && { borderColor: colors.brand, backgroundColor: colors.brand50 },
+                        ]}
                       >
                         <Text
                           style={[
                             styles.chipText,
-                            selected && { color: colors.brandDark, fontWeight: '700' },
+                            { color: colors.ink3 },
+                            selected && { color: colors.brand700, fontWeight: '700' },
                           ]}
                         >
                           {option}
@@ -149,12 +157,17 @@ export function IntakeScreen() {
                       setCustomRole(true);
                       setRole('');
                     }}
-                    style={[styles.chip, customRole && styles.chipSelected]}
+                    style={[
+                      styles.chip,
+                      { borderColor: colors.line, backgroundColor: colors.card },
+                      customRole && { borderColor: colors.brand, backgroundColor: colors.brand50 },
+                    ]}
                   >
                     <Text
                       style={[
                         styles.chipText,
-                        customRole && { color: colors.brandDark, fontWeight: '700' },
+                        { color: colors.ink3 },
+                        customRole && { color: colors.brand700, fontWeight: '700' },
                       ]}
                     >
                       Other
@@ -166,9 +179,12 @@ export function IntakeScreen() {
                     value={role}
                     onChangeText={setRole}
                     placeholder="Type your role"
-                    placeholderTextColor={colors.inkFaint}
+                    placeholderTextColor={colors.ink4}
                     autoCapitalize="sentences"
-                    style={[styles.input, { marginTop: spacing.sm }]}
+                    style={[
+                      styles.input,
+                      { color: colors.ink, backgroundColor: colors.surface50, marginTop: spacing.sm },
+                    ]}
                     returnKeyType="done"
                     onSubmitEditing={() => void onContinue()}
                   />
@@ -178,14 +194,14 @@ export function IntakeScreen() {
           </View>
         </ScrollView>
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, { borderTopColor: colors.line }]}>
           <Button
             label="Continue"
             loading={busy}
             disabled={!canContinue}
             onPress={() => void onContinue()}
           />
-          <Text style={[type.caption, { textAlign: 'center', marginTop: spacing.sm }]}>
+          <Text style={[type.caption, { color: colors.ink3, textAlign: 'center', marginTop: spacing.sm }]}>
             Guest session — you won’t need to sign in
           </Text>
         </View>
@@ -203,10 +219,11 @@ function Field({
   required?: boolean;
   children: React.ReactNode;
 }) {
+  const { colors } = useTheme();
   // Small gray label above the input, not a bold heading.
   return (
     <View style={{ gap: spacing.sm }}>
-      <Text style={styles.fieldLabel}>
+      <Text style={[styles.fieldLabel, { color: colors.ink3 }]}>
         {label}
         {required ? <Text style={{ color: colors.brand }}> *</Text> : null}
       </Text>
@@ -216,39 +233,29 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { flex: 1 },
   scroll: { padding: spacing.lg, paddingBottom: spacing.md },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.line,
   },
-  fieldLabel: { fontSize: 13, fontWeight: '500', color: colors.inkMuted },
+  fieldLabel: { fontSize: 13, fontWeight: '500' },
   input: {
-    // Soft gray fill, no border, generous padding.
+    // Soft tinted fill, no border, generous padding.
     minHeight: 50,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontSize: 16,
-    color: colors.ink,
-    backgroundColor: colors.surface,
   },
-  hint: { ...type.caption, color: colors.danger },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
     borderRadius: radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  chipSelected: {
-    borderColor: colors.brand,
-    backgroundColor: colors.brandLight,
-  },
-  chipText: { fontSize: 14, color: colors.inkMuted, fontWeight: '500' },
+  chipText: { fontSize: 14, fontWeight: '500' },
 });

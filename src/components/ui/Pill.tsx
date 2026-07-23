@@ -1,11 +1,13 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors, radius } from '../../theme';
 
-/** Small tag-style label. */
+import { radius, useTheme } from '../../theme';
+
+/** Small tag-style label — matches the web app's Badge (rounded-full, soft tint). */
 export function Pill({ label, tone = 'brand' }: { label: string; tone?: 'brand' | 'danger' | 'muted' }) {
-  const bg = tone === 'brand' ? colors.brandLight : tone === 'danger' ? colors.dangerBg : colors.surface;
-  const fg = tone === 'brand' ? colors.brandDark : tone === 'danger' ? colors.danger : colors.inkMuted;
+  const { colors } = useTheme();
+  const bg = tone === 'brand' ? colors.brand50 : tone === 'danger' ? colors.dangerSoft : colors.surface50;
+  const fg = tone === 'brand' ? colors.brand700 : tone === 'danger' ? colors.danger : colors.ink3;
   return (
     <View style={[styles.pill, { backgroundColor: bg }]}>
       <Text style={{ color: fg, fontSize: 12, fontWeight: '600' }}>{label}</Text>
@@ -16,7 +18,7 @@ export function Pill({ label, tone = 'brand' }: { label: string; tone?: 'brand' 
 const styles = StyleSheet.create({
   pill: {
     alignSelf: 'flex-start',
-    borderRadius: radius.sm,
+    borderRadius: radius.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },

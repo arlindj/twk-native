@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Button, Callout, PageHeader, Screen } from '../components/ui';
 import { resetToHome } from '../navigation';
 import { useSession } from '../state/sessionStore';
-import { colors, spacing, type } from '../theme';
+import { spacing, type, useTheme } from '../theme';
 
 /**
  * Upload + completion. The recording never blocks silently: the
@@ -11,6 +11,7 @@ import { colors, spacing, type } from '../theme';
  * the local file is preserved.
  */
 export function UploadScreen() {
+  const { colors } = useTheme();
   const phase = useSession((s) => s.phase);
   const progress = useSession((s) => s.uploadProgress);
   const error = useSession((s) => s.error);
@@ -26,7 +27,7 @@ export function UploadScreen() {
         />
         {error ? (
           <Callout icon="alert-triangle" tone="warning">
-            <Text style={type.caption}>{error}</Text>
+            <Text style={[type.caption, { color: colors.ink }]}>{error}</Text>
           </Callout>
         ) : null}
       </Screen>
@@ -46,8 +47,8 @@ export function UploadScreen() {
     <Screen>
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.brand} />
-        <Text style={[type.h3, { marginTop: spacing.md }]}>{label}</Text>
-        <Text style={[type.caption, { marginTop: spacing.xs }]}>
+        <Text style={[type.h3, { color: colors.ink, marginTop: spacing.md }]}>{label}</Text>
+        <Text style={[type.caption, { color: colors.ink3, marginTop: spacing.xs }]}>
           Please keep the app open until this finishes.
         </Text>
       </View>
@@ -56,6 +57,7 @@ export function UploadScreen() {
 }
 
 export function DoneScreen() {
+  const { colors } = useTheme();
   const reset = useSession((s) => s.reset);
   const lostSegments = useSession((s) => s.lostSegments);
   return (
@@ -78,7 +80,7 @@ export function DoneScreen() {
       />
       {lostSegments > 0 ? (
         <Callout icon="alert-triangle" tone="warning">
-          <Text style={type.caption}>
+          <Text style={[type.caption, { color: colors.ink }]}>
             {lostSegments === 1
               ? 'One part of the screen recording could not be saved, but your taps and answers were submitted in full.'
               : `${lostSegments} parts of the screen recording could not be saved, but your taps and answers were submitted in full.`}
@@ -86,7 +88,7 @@ export function DoneScreen() {
         </Callout>
       ) : null}
       <Callout icon="lock">
-        <Text style={type.caption}>
+        <Text style={[type.caption, { color: colors.ink }]}>
           Your recording, taps and answers were sent securely to the research team. Recordings are
           kept only as long as the study’s retention policy allows.
         </Text>

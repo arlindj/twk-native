@@ -5,7 +5,7 @@ import { useKeepAwake } from '../native/keepAwake';
 import { Button } from '../components/ui';
 import { track } from '../events/eventQueue';
 import { useSession } from '../state/sessionStore';
-import { colors, radius, spacing, type } from '../theme';
+import { radius, spacing, type, useTheme } from '../theme';
 import { GraphHotspot, GraphScreen } from '../types';
 
 /**
@@ -23,6 +23,7 @@ import { GraphHotspot, GraphScreen } from '../types';
  */
 export function GraphPlayerScreen() {
   useKeepAwake();
+  const { colors } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const index = useSession((s) => s.currentTaskIndex);
   const completeTask = useSession((s) => s.completeTask);
@@ -82,7 +83,7 @@ export function GraphPlayerScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]} edges={['top', 'bottom']}>
       <View style={{ flex: 1 }}>
         {screen?.imageUrl ? (
           <View style={{ width: layoutWidth, height: layoutHeight }}>
@@ -106,13 +107,14 @@ export function GraphPlayerScreen() {
             ))}
           </View>
         ) : (
-          <View style={styles.errorBox}>
-            <Text style={type.body}>This screen isn’t available.</Text>
+          <View style={[styles.errorBox, { backgroundColor: colors.paper }]}>
+            <Text style={[type.body, { color: colors.ink3 }]}>This screen isn’t available.</Text>
           </View>
         )}
       </View>
 
-      {/* Floating task bar — mirrors PlayerScreen */}
+      {/* Floating task bar — always dark chrome regardless of theme, mirrors
+          PlayerScreen (see its comment: overlays arbitrary screenshot content). */}
       <View style={styles.bar}>
         <Pressable style={styles.barTask} onPress={() => setTaskSheet(true)}>
           <View style={styles.barDot} />
@@ -120,21 +122,21 @@ export function GraphPlayerScreen() {
             {task.title}
           </Text>
         </Pressable>
-        <Pressable style={styles.barDone} onPress={() => setTaskSheet(true)}>
+        <Pressable style={[styles.barDone, { backgroundColor: colors.brand }]} onPress={() => setTaskSheet(true)}>
           <Text style={styles.barDoneText}>{hasGoal ? 'Stuck?' : 'Done?'}</Text>
         </Pressable>
       </View>
 
       <Modal visible={taskSheet} transparent animationType="slide" onRequestClose={() => setTaskSheet(false)}>
-        <Pressable style={styles.sheetBackdrop} onPress={() => setTaskSheet(false)} />
-        <View style={styles.sheet}>
-          <View style={styles.sheetHandle} />
-          <Text style={type.h3}>Task {index + 1}</Text>
-          <Text style={[type.h2, { marginTop: 4 }]}>{task.title}</Text>
-          <Text style={[type.body, { marginTop: spacing.sm }]}>{task.instruction}</Text>
+        <Pressable style={[styles.sheetBackdrop, { backgroundColor: colors.overlay }]} onPress={() => setTaskSheet(false)} />
+        <View style={[styles.sheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.sheetHandle, { backgroundColor: colors.line }]} />
+          <Text style={[type.h3, { color: colors.ink }]}>Task {index + 1}</Text>
+          <Text style={[type.h2, { color: colors.ink, marginTop: 4 }]}>{task.title}</Text>
+          <Text style={[type.body, { color: colors.ink3, marginTop: spacing.sm }]}>{task.instruction}</Text>
           <View style={{ marginTop: spacing.lg }}>
             {hasGoal ? (
-              <Text style={[type.caption, { marginBottom: spacing.md }]}>
+              <Text style={[type.caption, { color: colors.ink3, marginBottom: spacing.md }]}>
                 This task finishes on its own once you reach the goal. Only use the
                 button below if you can’t get there.
               </Text>
@@ -161,14 +163,14 @@ export function GraphPlayerScreen() {
       </Modal>
 
       {goalReached ? (
-        <View style={styles.goalOverlay}>
-          <View style={styles.goalCard}>
-            <View style={styles.goalCheck}>
-              <Text style={styles.goalCheckMark}>✓</Text>
+        <View style={[styles.goalOverlay, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.goalCard, { backgroundColor: colors.card }]}>
+            <View style={[styles.goalCheck, { backgroundColor: colors.brand }]}>
+              <Text style={[styles.goalCheckMark, { color: colors.onBrand }]}>✓</Text>
             </View>
-            <Text style={styles.goalKicker}>Task {index + 1} complete</Text>
-            <Text style={styles.goalTitle}>{task.title}</Text>
-            <Text style={styles.goalSub}>Nice work — the app spotted you reached the goal.</Text>
+            <Text style={[styles.goalKicker, { color: colors.brand }]}>Task {index + 1} complete</Text>
+            <Text style={[styles.goalTitle, { color: colors.ink }]}>{task.title}</Text>
+            <Text style={[styles.goalSub, { color: colors.ink3 }]}>Nice work — the app spotted you reached the goal.</Text>
             <View style={{ alignSelf: 'stretch', marginTop: spacing.sm }}>
               <Button
                 label={
@@ -185,13 +187,12 @@ export function GraphPlayerScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1 },
   errorBox: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
-    backgroundColor: colors.bg,
   },
   bar: {
     position: 'absolute',
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
     bottom: spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.ink,
+    backgroundColor: '#1A1A1A',
     borderRadius: radius.pill,
     paddingVertical: 10,
     paddingHorizontal: spacing.md,
@@ -215,17 +216,15 @@ const styles = StyleSheet.create({
   barDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF5A5A' },
   barText: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1 },
   barDone: {
-    backgroundColor: colors.brand,
     borderRadius: radius.pill,
     paddingHorizontal: 14,
     paddingVertical: 6,
   },
   barDoneText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  sheetBackdrop: { flex: 1, backgroundColor: colors.overlay },
+  sheetBackdrop: { flex: 1 },
   sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
   },
@@ -234,7 +233,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.line,
     marginBottom: spacing.md,
   },
   goalOverlay: {
@@ -245,12 +243,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.overlay,
   },
   goalCard: {
     alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     paddingVertical: spacing.xl,
     paddingHorizontal: spacing.xl * 1.5,
     gap: spacing.md,
@@ -264,13 +260,11 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  goalCheckMark: { color: '#fff', fontSize: 34, fontWeight: '800' },
+  goalCheckMark: { fontSize: 34, fontWeight: '800' },
   goalKicker: {
-    color: colors.brand,
     fontSize: 13,
     fontWeight: '700',
     textTransform: 'uppercase',

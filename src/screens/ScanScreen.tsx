@@ -10,11 +10,12 @@ import {
 import { Button, Screen } from '../components/ui';
 import { parseTestLink } from '../linkParser';
 import { Nav } from '../navigation';
-import { radius, spacing, type } from '../theme';
+import { radius, spacing, type, useTheme } from '../theme';
 
 /** QR scanner — accepts the same link formats as manual entry. */
 export function ScanScreen() {
   const navigation = useNavigation<Nav>();
+  const { colors } = useTheme();
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('back');
   const [invalid, setInvalid] = useState(false);
@@ -50,8 +51,8 @@ export function ScanScreen() {
     return (
       <Screen>
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[type.h2, { marginBottom: spacing.sm }]}>Camera access</Text>
-          <Text style={[type.body, { marginBottom: spacing.lg }]}>
+          <Text style={[type.h2, { color: colors.ink, marginBottom: spacing.sm }]}>Camera access</Text>
+          <Text style={[type.body, { color: colors.ink3, marginBottom: spacing.lg }]}>
             {blocked
               ? 'Camera access is blocked for this app. Enable it in Settings, or go back and paste the test link manually — scanning is optional.'
               : 'The camera is only used to scan your test QR code. Nothing is photographed or stored. You can also paste the test link manually instead.'}
@@ -77,8 +78,8 @@ export function ScanScreen() {
     return (
       <Screen>
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <Text style={[type.h2, { marginBottom: spacing.sm }]}>No camera</Text>
-          <Text style={[type.body, { marginBottom: spacing.lg }]}>
+          <Text style={[type.h2, { color: colors.ink, marginBottom: spacing.sm }]}>No camera</Text>
+          <Text style={[type.body, { color: colors.ink3, marginBottom: spacing.lg }]}>
             No camera is available on this device. Paste the test link manually instead.
           </Text>
           <Button label="Back" variant="secondary" onPress={() => navigation.goBack()} />
@@ -95,7 +96,7 @@ export function ScanScreen() {
         isActive
         codeScanner={codeScanner}
       />
-      <View style={styles.frame} pointerEvents="none" />
+      <View style={[styles.frame, { borderColor: colors.brand }]} pointerEvents="none" />
       <View style={styles.bottom}>
         {invalid ? (
           <Text style={styles.invalid}>This QR code is not a test link.</Text>
@@ -109,6 +110,8 @@ export function ScanScreen() {
 }
 
 const styles = StyleSheet.create({
+  // The camera viewfinder is intentionally theme-independent (black chrome,
+  // white/red overlay text) — a full-bleed camera view, not app content.
   frame: {
     position: 'absolute',
     top: '25%',
@@ -117,7 +120,6 @@ const styles = StyleSheet.create({
     height: 240,
     borderRadius: radius.lg,
     borderWidth: 3,
-    borderColor: '#0B7A4B',
   },
   bottom: {
     position: 'absolute',

@@ -7,7 +7,7 @@ import { navigationRef, RootStackParamList } from './navigation';
 import { HomeScreen } from './screens/HomeScreen';
 import { ScanScreen } from './screens/ScanScreen';
 import { TestRunnerScreen } from './screens/TestRunnerScreen';
-import { colors } from './theme';
+import { ThemeProvider, useTheme } from './theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -30,16 +30,22 @@ const linking = {
   },
 };
 
-export default function App() {
+/** Reads the resolved theme (must be inside ThemeProvider) and applies it to
+ *  the navigator + native status bar. */
+function ThemedApp() {
   const [splashDone, setSplashDone] = useState(false);
+  const { colors, resolvedMode } = useTheme();
   return (
     <>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bg} />
+      <StatusBar
+        barStyle={resolvedMode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.paper}
+      />
       <NavigationContainer ref={navigationRef} linking={linking}>
         <Stack.Navigator
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
+            contentStyle: { backgroundColor: colors.paper },
           }}
         >
           <Stack.Screen name="Home" component={HomeScreen} />
@@ -49,5 +55,13 @@ export default function App() {
       </NavigationContainer>
       {!splashDone ? <SplashScreen onFinish={() => setSplashDone(true)} /> : null}
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <ThemedApp />
+    </ThemeProvider>
   );
 }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Platform, Text, View } from 'react-native';
 import { Button, Callout, ListRow, PageHeader, Screen, SectionLabel } from '../components/ui';
 import { useSession } from '../state/sessionStore';
-import { colors, spacing, type } from '../theme';
+import { spacing, type, useTheme } from '../theme';
 
 /**
  * Recording permission checkpoint. The actual OS dialog (ReplayKit /
@@ -12,6 +12,7 @@ import { colors, spacing, type } from '../theme';
  * instead of failing silently.
  */
 export function PermissionScreen() {
+  const { colors } = useTheme();
   const phase = useSession((s) => s.phase);
   const error = useSession((s) => s.error);
   const grantRecording = useSession((s) => s.grantRecording);

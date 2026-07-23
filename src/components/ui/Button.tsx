@@ -1,10 +1,14 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
-import { colors, radius, spacing, type } from '../../theme';
+
+import { radius, spacing, type, useTheme } from '../../theme';
 
 /**
- * Primary uses our brand green; secondary is white with a hairline
- * border (auth-button style); ghost is text-only. Pressed state darkens.
+ * Primary uses the brand green (matches the web app's default Button);
+ * secondary is an outlined button (web's `outline` variant); ghost is
+ * text-only; danger is a soft, calm treatment (web's danger Badge tint,
+ * not an alarming solid red — this is a "give up" action, not a destructive
+ * one). Pressed state darkens/tints.
  */
 export function Button({
   label,
@@ -19,6 +23,7 @@ export function Button({
   disabled?: boolean;
   loading?: boolean;
 }) {
+  const { colors } = useTheme();
   const isDisabled = disabled || loading;
   return (
     <Pressable
@@ -27,26 +32,26 @@ export function Button({
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.button,
-        variant === 'primary' && { backgroundColor: pressed ? colors.brandDark : colors.brand },
+        variant === 'primary' && { backgroundColor: pressed ? colors.brand700 : colors.brand },
         variant === 'secondary' && {
-          backgroundColor: pressed ? colors.surface : colors.card,
-          borderWidth: 1,
+          backgroundColor: pressed ? colors.surface50 : colors.card,
+          borderWidth: StyleSheet.hairlineWidth,
           borderColor: colors.line,
         },
-        variant === 'ghost' && { backgroundColor: pressed ? colors.surface : 'transparent' },
-        variant === 'danger' && { backgroundColor: colors.dangerBg },
+        variant === 'ghost' && { backgroundColor: pressed ? colors.surface50 : 'transparent' },
+        variant === 'danger' && { backgroundColor: colors.dangerSoft },
         isDisabled && { opacity: 0.45 },
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={variant === 'primary' ? '#fff' : colors.brand} />
+        <ActivityIndicator color={variant === 'primary' ? colors.onBrand : colors.brand} />
       ) : (
         <Text
           style={[
             type.button,
-            variant === 'primary' && { color: '#fff' },
+            variant === 'primary' && { color: colors.onBrand },
             variant === 'secondary' && { color: colors.ink },
-            variant === 'ghost' && { color: colors.inkMuted },
+            variant === 'ghost' && { color: colors.ink3 },
             variant === 'danger' && { color: colors.danger },
           ]}
         >

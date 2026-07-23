@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
-import { colors, spacing, type } from '../../theme';
+
+import { spacing, type, useTheme } from '../../theme';
 
 /**
  * Flat list row: muted monochrome line icon, title + optional body,
@@ -26,15 +27,16 @@ export function ListRow({
   chevron?: boolean;
   last?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
-    <View style={[styles.row, !last && styles.divider]}>
-      <Feather name={icon} size={20} color={colors.inkMuted} style={styles.icon} />
+    <View style={[styles.row, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line }]}>
+      <Feather name={icon} size={20} color={colors.ink3} style={styles.icon} />
       <View style={{ flex: 1 }}>
-        <Text style={type.h3}>{title}</Text>
-        {body ? <Text style={[type.body, { marginTop: 2 }]}>{body}</Text> : null}
+        <Text style={[type.h3, { color: colors.ink }]}>{title}</Text>
+        {body ? <Text style={[type.body, { color: colors.ink3, marginTop: 2 }]}>{body}</Text> : null}
       </View>
-      {value ? <Text style={styles.value}>{value}</Text> : null}
-      {chevron ? <Feather name="chevron-right" size={18} color={colors.inkFaint} /> : null}
+      {value ? <Text style={[styles.value, { color: colors.ink4 }]}>{value}</Text> : null}
+      {chevron ? <Feather name="chevron-right" size={18} color={colors.ink4} /> : null}
     </View>
   );
 }
@@ -46,10 +48,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     alignItems: 'center',
   },
-  divider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.line,
-  },
   icon: { marginTop: 1, alignSelf: 'flex-start' },
-  value: { fontSize: 14, color: colors.inkFaint },
+  value: { fontSize: 14 },
 });

@@ -11,10 +11,10 @@ import {
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button } from '../components/ui';
+import { Button, ThemeToggle } from '../components/ui';
 import { parseTestLink } from '../linkParser';
 import { Nav } from '../navigation';
-import { colors, radius, spacing, type } from '../theme';
+import { radius, spacing, type, useTheme } from '../theme';
 
 /**
  * Welcome — the app is a participant runtime, so the only actions are
@@ -27,6 +27,7 @@ import { colors, radius, spacing, type } from '../theme';
  */
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
+  const { colors } = useTheme();
   const [manual, setManual] = useState(false);
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -50,16 +51,18 @@ export function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
         <View style={styles.brandRow}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>T</Text>
+          <View style={[styles.logo, { backgroundColor: colors.brand }]}>
+            <Text style={[styles.logoText, { color: colors.onBrand }]}>T</Text>
           </View>
-          <Text style={styles.brandName}>TWK Participate</Text>
+          <Text style={[styles.brandName, { color: colors.ink }]}>TWK Participate</Text>
+          <View style={{ flex: 1 }} />
+          <ThemeToggle />
         </View>
 
         {/* Hero: calm concentric rings behind a single mark — the mark and
@@ -68,9 +71,9 @@ export function HomeScreen() {
             the keyboard or the input on smaller screens. */}
         {!hideHero ? (
           <View style={styles.hero}>
-            <View style={[styles.ring, styles.ringOuter]} />
-            <View style={[styles.ring, styles.ringInner]} />
-            <View style={styles.heroMark}>
+            <View style={[styles.ring, styles.ringOuter, { borderColor: colors.line }]} />
+            <View style={[styles.ring, styles.ringInner, { borderColor: colors.brand300 }]} />
+            <View style={[styles.heroMark, { backgroundColor: colors.brand50 }]}>
               <Feather name={manual ? 'link' : 'smartphone'} size={40} color={colors.brand} />
             </View>
           </View>
@@ -79,15 +82,15 @@ export function HomeScreen() {
         <View style={styles.copy}>
           {manual ? (
             <>
-              <Text style={styles.headline}>Enter your{'\n'}test link.</Text>
-              <Text style={[type.body, styles.subtitle]}>
+              <Text style={[styles.headline, { color: colors.ink }]}>Enter your{'\n'}test link.</Text>
+              <Text style={[type.body, styles.subtitle, { color: colors.ink3 }]}>
                 Paste the test link or code from your invitation.
               </Text>
             </>
           ) : (
             <>
-              <Text style={styles.headline}>Your test.{'\n'}Your screen.</Text>
-              <Text style={[type.body, styles.subtitle]}>
+              <Text style={[styles.headline, { color: colors.ink }]}>Your test.{'\n'}Your screen.</Text>
+              <Text style={[type.body, styles.subtitle, { color: colors.ink3 }]}>
                 Scan the QR code from your invitation, or paste your test link to begin.
               </Text>
             </>
@@ -98,18 +101,18 @@ export function HomeScreen() {
           {manual ? (
             <>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: colors.ink, backgroundColor: colors.surface50 }]}
                 value={input}
                 onChangeText={setInput}
                 placeholder="Paste test link or code"
-                placeholderTextColor={colors.inkFaint}
+                placeholderTextColor={colors.ink4}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
                 onSubmitEditing={openTest}
               />
-              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
               <Button label="Open test" onPress={openTest} disabled={!input.trim()} />
               <Button label="Back" variant="ghost" onPress={() => setManual(false)} />
             </>
@@ -121,7 +124,7 @@ export function HomeScreen() {
           )}
         </View>
 
-        <Text style={styles.footer}>
+        <Text style={[styles.footer, { color: colors.ink4 }]}>
           By continuing you agree that your screen and taps are recorded during the test.
         </Text>
       </KeyboardAvoidingView>
@@ -130,7 +133,7 @@ export function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
+  safe: { flex: 1, paddingHorizontal: spacing.lg },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -141,12 +144,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  brandName: { fontSize: 16, fontWeight: '700', color: colors.ink },
+  logoText: { fontSize: 18, fontWeight: '800' },
+  brandName: { fontSize: 16, fontWeight: '700' },
 
   hero: {
     flex: 1,
@@ -158,15 +160,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.line,
   },
   ringOuter: { width: 240, height: 240 },
-  ringInner: { width: 168, height: 168, borderColor: colors.brandMuted },
+  ringInner: { width: 168, height: 168 },
   heroMark: {
     width: 96,
     height: 96,
     borderRadius: 28,
-    backgroundColor: colors.brandLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -175,7 +175,6 @@ const styles = StyleSheet.create({
   headline: {
     fontSize: 32,
     fontWeight: '800',
-    color: colors.ink,
     lineHeight: 38,
     letterSpacing: -0.6,
   },
@@ -187,10 +186,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
     fontSize: 15,
-    color: colors.ink,
-    backgroundColor: colors.surface,
   },
-  error: { color: colors.danger, fontSize: 13, marginTop: spacing.sm },
+  error: { fontSize: 13, marginTop: spacing.sm },
 
   footer: {
     ...type.caption,
