@@ -58,7 +58,7 @@ export function PageHeader({
             ) : null}
           </View>
           <View style={styles.centerSlot}>
-            {studyName ? <Pill label={studyName} tone="muted" /> : null}
+            {studyName ? <Pill label={studyName} tone="muted" truncate /> : null}
           </View>
           <View style={[styles.sideSlot, styles.sideSlotEnd]}>
             {showThemeToggle ? <ThemeToggle /> : null}
