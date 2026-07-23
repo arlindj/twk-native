@@ -23,7 +23,7 @@ export function Button({
   disabled?: boolean;
   loading?: boolean;
 }) {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   const isDisabled = disabled || loading;
   return (
     <Pressable
@@ -32,6 +32,9 @@ export function Button({
       disabled={isDisabled}
       style={({ pressed }) => [
         styles.button,
+        // Web's primary button carries a subtle shadow (none in dark mode —
+        // same rule as Card).
+        variant === 'primary' && resolvedMode === 'light' && styles.primaryShadow,
         variant === 'primary' && { backgroundColor: pressed ? colors.brand700 : colors.brand },
         variant === 'secondary' && {
           backgroundColor: pressed ? colors.surface50 : colors.card,
@@ -70,5 +73,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
     marginTop: spacing.sm,
+  },
+  primaryShadow: {
+    shadowColor: '#0F1729',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
   },
 });

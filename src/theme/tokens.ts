@@ -1,3 +1,6 @@
+import type { ColorScale } from './colors';
+import type { ResolvedMode } from './ThemeContext';
+
 /**
  * Non-color tokens — radius, spacing, and the type scale (sizes/weights only;
  * color comes from the current theme via useTheme(), not baked in here).
@@ -31,3 +34,28 @@ export const type = {
   caption: { fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
   button: { fontSize: 15, fontWeight: '600' as const },
 } as const;
+
+/**
+ * Shared text-input chrome — matches the web app's Input/Textarea component
+ * exactly: a visible 1px border, transparent-over-page background (not a
+ * filled well), and a faint elevation in light mode only (web's `shadow-sm`,
+ * which resolves to `none` in dark — same rule Card follows). Every
+ * TextInput in the app should spread this rather than inventing its own look.
+ */
+export function inputChrome(colors: ColorScale, resolvedMode: ResolvedMode) {
+  return {
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.paper,
+    color: colors.ink,
+    ...(resolvedMode === 'light'
+      ? {
+          shadowColor: '#0F1729',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.04,
+          shadowRadius: 2,
+          elevation: 1,
+        }
+      : null),
+  };
+}

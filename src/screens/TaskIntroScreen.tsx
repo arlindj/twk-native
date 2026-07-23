@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
-import { Button, Callout, ProgressBar, Screen, SectionLabel } from '../components/ui';
+import { Button, Callout, GradientTile, ProgressBar, Screen, SectionLabel } from '../components/ui';
 import { useSession } from '../state/sessionStore';
 import { radius, spacing, type, useTheme } from '../theme';
 
@@ -29,9 +29,9 @@ export function TaskIntroScreen() {
       <ProgressBar progress={index / total} />
       <View style={{ marginTop: spacing.xl }}>
         <SectionLabel>{`Task ${index + 1} of ${total}`}</SectionLabel>
-        <View style={[styles.iconTile, { backgroundColor: colors.surface50 }]}>
-          <Feather name="target" size={26} color={colors.ink} />
-        </View>
+        <GradientTile size={48} radius={radius.lg} style={styles.iconTile}>
+          <Feather name="target" size={26} color={colors.brand700} />
+        </GradientTile>
         <Text style={[type.h1, { color: colors.ink }]}>{task.title}</Text>
         <Callout icon="flag" style={{ marginTop: spacing.lg }}>
           <Text style={[type.h3, { color: colors.ink }]}>Your task</Text>
@@ -51,11 +51,6 @@ export function TaskIntroScreen() {
 
 const styles = StyleSheet.create({
   iconTile: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginVertical: spacing.sm,
   },
 });

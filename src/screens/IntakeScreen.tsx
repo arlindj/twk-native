@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, PageHeader, Pill } from '../components/ui';
 import { useSession } from '../state/sessionStore';
-import { radius, spacing, type, useTheme } from '../theme';
+import { inputChrome, radius, spacing, type, useTheme } from '../theme';
 
 /**
  * Guest intake — no login. Tester self-reports name, age, and role so the
@@ -20,7 +20,7 @@ import { radius, spacing, type, useTheme } from '../theme';
  * bootstrap.intake (study-configurable).
  */
 export function IntakeScreen() {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const submitIntake = useSession((s) => s.submitIntake);
   const back = useSession((s) => s.back);
@@ -92,10 +92,10 @@ export function IntakeScreen() {
                   value={fullName}
                   onChangeText={setFullName}
                   placeholder="e.g. Sara Ahmed"
-                  placeholderTextColor={colors.ink4}
+                  placeholderTextColor={colors.ink3}
                   autoCapitalize="words"
                   autoCorrect={false}
-                  style={[styles.input, { color: colors.ink, backgroundColor: colors.surface50 }]}
+                  style={[styles.input, inputChrome(colors, resolvedMode)]}
                   returnKeyType="next"
                 />
               </Field>
@@ -107,9 +107,9 @@ export function IntakeScreen() {
                   value={ageText}
                   onChangeText={(t) => setAgeText(t.replace(/[^0-9]/g, '').slice(0, 3))}
                   placeholder="e.g. 28"
-                  placeholderTextColor={colors.ink4}
+                  placeholderTextColor={colors.ink3}
                   keyboardType="number-pad"
-                  style={[styles.input, { color: colors.ink, backgroundColor: colors.surface50 }]}
+                  style={[styles.input, inputChrome(colors, resolvedMode)]}
                   returnKeyType="next"
                 />
                 {ageText.length > 0 && !ageOk ? (
@@ -179,11 +179,12 @@ export function IntakeScreen() {
                     value={role}
                     onChangeText={setRole}
                     placeholder="Type your role"
-                    placeholderTextColor={colors.ink4}
+                    placeholderTextColor={colors.ink3}
                     autoCapitalize="sentences"
                     style={[
                       styles.input,
-                      { color: colors.ink, backgroundColor: colors.surface50, marginTop: spacing.sm },
+                      inputChrome(colors, resolvedMode),
+                      { marginTop: spacing.sm },
                     ]}
                     returnKeyType="done"
                     onSubmitEditing={() => void onContinue()}
@@ -243,7 +244,6 @@ const styles = StyleSheet.create({
   },
   fieldLabel: { fontSize: 13, fontWeight: '500' },
   input: {
-    // Soft tinted fill, no border, generous padding.
     minHeight: 50,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,

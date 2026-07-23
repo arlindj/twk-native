@@ -11,10 +11,10 @@ import {
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, ThemeToggle } from '../components/ui';
+import { Button, GradientTile, ThemeToggle } from '../components/ui';
 import { parseTestLink } from '../linkParser';
 import { Nav } from '../navigation';
-import { radius, spacing, type, useTheme } from '../theme';
+import { inputChrome, radius, spacing, type, useTheme } from '../theme';
 
 /**
  * Welcome — the app is a participant runtime, so the only actions are
@@ -27,7 +27,7 @@ import { radius, spacing, type, useTheme } from '../theme';
  */
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   const [manual, setManual] = useState(false);
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -68,16 +68,20 @@ export function HomeScreen() {
         {/* Hero: calm concentric rings behind a single mark — the mark and
             copy change with the mode (scan-or-link vs link-only). Hidden
             while the manual-entry field is focused so it never overlaps
-            the keyboard or the input on smaller screens. */}
+            the keyboard or the input on smaller screens — but the flex:1
+            spacer stays either way, so the headline never jumps up against
+            the brand row when the rings disappear. */}
         {!hideHero ? (
           <View style={styles.hero}>
             <View style={[styles.ring, styles.ringOuter, { borderColor: colors.line }]} />
             <View style={[styles.ring, styles.ringInner, { borderColor: colors.brand300 }]} />
-            <View style={[styles.heroMark, { backgroundColor: colors.brand50 }]}>
-              <Feather name={manual ? 'link' : 'smartphone'} size={40} color={colors.brand} />
-            </View>
+            <GradientTile size={96} radius={28}>
+              <Feather name={manual ? 'link' : 'smartphone'} size={40} color={colors.brand700} />
+            </GradientTile>
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.hero} />
+        )}
 
         <View style={styles.copy}>
           {manual ? (
@@ -101,11 +105,11 @@ export function HomeScreen() {
           {manual ? (
             <>
               <TextInput
-                style={[styles.input, { color: colors.ink, backgroundColor: colors.surface50 }]}
+                style={[styles.input, inputChrome(colors, resolvedMode)]}
                 value={input}
                 onChangeText={setInput}
                 placeholder="Paste test link or code"
-                placeholderTextColor={colors.ink4}
+                placeholderTextColor={colors.ink3}
                 autoCapitalize="none"
                 autoCorrect={false}
                 onFocus={() => setInputFocused(true)}
@@ -163,13 +167,6 @@ const styles = StyleSheet.create({
   },
   ringOuter: { width: 240, height: 240 },
   ringInner: { width: 168, height: 168 },
-  heroMark: {
-    width: 96,
-    height: 96,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
   copy: { marginBottom: spacing.xl },
   headline: {

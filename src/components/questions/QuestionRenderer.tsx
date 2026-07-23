@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { radius, spacing, type, useTheme } from '../../theme';
+import { inputChrome, radius, spacing, type, useTheme } from '../../theme';
 import { QuestionBlock } from '../../types';
 
 /**
@@ -99,17 +99,14 @@ function OpenText({
   placeholder?: string;
   onChange: (v: string) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   return (
     <TextInput
-      style={[
-        styles.input,
-        { backgroundColor: colors.card, borderColor: colors.line, color: colors.ink },
-      ]}
+      style={[styles.input, inputChrome(colors, resolvedMode)]}
       value={value}
       onChangeText={onChange}
       placeholder={placeholder || 'Type your answer…'}
-      placeholderTextColor={colors.ink4}
+      placeholderTextColor={colors.ink3}
       multiline
       textAlignVertical="top"
     />
@@ -134,17 +131,14 @@ function SimpleInput({
   placeholder?: string;
   onChange: (v: string) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   return (
     <TextInput
-      style={[
-        styles.singleInput,
-        { backgroundColor: colors.card, borderColor: colors.line, color: colors.ink },
-      ]}
+      style={[styles.singleInput, inputChrome(colors, resolvedMode)]}
       value={value}
       onChangeText={onChange}
       placeholder={placeholder || 'Your answer…'}
-      placeholderTextColor={colors.ink4}
+      placeholderTextColor={colors.ink3}
       keyboardType={KEYBOARD_BY_INPUT_TYPE[inputType]}
       autoCapitalize={inputType === 'email' ? 'none' : 'sentences'}
       autoCorrect={inputType === 'text'}
@@ -164,7 +158,7 @@ function ContextScreen({ body }: { body: string }) {
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/\*(.+?)\*/g, '$1');
   return (
-    <View style={[styles.contextBox, { backgroundColor: colors.surface50 }]}>
+    <View style={[styles.contextBox, { backgroundColor: colors.surface50, borderColor: colors.line }]}>
       {plain
         .split(/\n{2,}/)
         .filter((p) => p.trim().length > 0)
@@ -256,7 +250,7 @@ function MultipleChoice({
   value: string[];
   onChange: (v: string[]) => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   // The answer array mixes picked options with an optional free-text
   // "Other" entry (any value that isn't one of the options). The typed
   // text only enters the array once non-empty, so an empty Other never
@@ -356,17 +350,14 @@ function MultipleChoice({
           </Pressable>
           {otherSelected ? (
             <TextInput
-              style={[
-                styles.singleInput,
-                { backgroundColor: colors.card, borderColor: colors.line, color: colors.ink },
-              ]}
+              style={[styles.singleInput, inputChrome(colors, resolvedMode)]}
               value={otherText}
               onChangeText={(t) => {
                 setOtherText(t);
                 commit(multiSelect ? optionValues : [], true, t);
               }}
               placeholder="Tell us more…"
-              placeholderTextColor={colors.ink4}
+              placeholderTextColor={colors.ink3}
               autoFocus
             />
           ) : null}
@@ -420,19 +411,18 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 120,
     borderRadius: radius.md,
-    borderWidth: 1,
     padding: spacing.md,
     fontSize: 16,
   },
   singleInput: {
     borderRadius: radius.md,
-    borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontSize: 16,
   },
   contextBox: {
     borderRadius: radius.md,
+    borderWidth: 1,
     padding: spacing.md,
   },
   scaleRow: { flexDirection: 'row', gap: spacing.xs },

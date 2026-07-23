@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 
 import { radius, spacing, type, useTheme } from '../../theme';
+import { GradientTile } from './GradientTile';
 import { ThemeToggle } from './ThemeToggle';
 
 /**
@@ -53,9 +54,9 @@ export function PageHeader({
           {showThemeToggle ? <ThemeToggle /> : null}
         </View>
       ) : null}
-      <View style={[styles.iconTile, { backgroundColor: colors.surface50 }]}>
-        <Feather name={icon} size={26} color={colors.ink} />
-      </View>
+      <GradientTile size={48} radius={radius.lg} style={styles.iconTile}>
+        <Feather name={icon} size={26} color={colors.brand700} />
+      </GradientTile>
       <Text style={[type.h1, { color: colors.ink }]}>{title}</Text>
       {subtitle ? (
         <Text style={[type.body, { color: colors.ink3, marginTop: spacing.sm }]}>{subtitle}</Text>
@@ -82,11 +83,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconTile: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: spacing.md,
   },
 });

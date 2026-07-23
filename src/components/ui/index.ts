@@ -2,6 +2,7 @@ export { Button } from './Button';
 export { Callout } from './Callout';
 export { Card } from './Card';
 export { Divider } from './Divider';
+export { GradientTile } from './GradientTile';
 export { ListRow } from './ListRow';
 export { PageHeader } from './PageHeader';
 export { Pill } from './Pill';

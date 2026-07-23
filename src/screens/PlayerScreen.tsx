@@ -101,7 +101,7 @@ true;
  */
 export function PlayerScreen() {
   useKeepAwake();
-  const { colors } = useTheme();
+  const { colors, resolvedMode } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const sessionId = useSession((s) => s.sessionId);
   const index = useSession((s) => s.currentTaskIndex);
@@ -312,7 +312,13 @@ export function PlayerScreen() {
       {/* Task sheet */}
       <Modal visible={taskSheet} transparent animationType="slide" onRequestClose={() => setTaskSheet(false)}>
         <Pressable style={[styles.sheetBackdrop, { backgroundColor: colors.overlay }]} onPress={() => setTaskSheet(false)} />
-        <View style={[styles.sheet, { backgroundColor: colors.card }]}>
+        <View
+          style={[
+            styles.sheet,
+            { backgroundColor: colors.card, borderColor: colors.line },
+            resolvedMode === 'light' && styles.sheetShadow,
+          ]}
+        >
           <View style={[styles.sheetHandle, { backgroundColor: colors.line }]} />
           <Text style={[type.h3, { color: colors.ink }]}>Task {index + 1}</Text>
           <Text style={[type.h2, { color: colors.ink, marginTop: 4 }]}>{task.title}</Text>
@@ -349,7 +355,13 @@ export function PlayerScreen() {
           the participant only picks the next step (never "I completed it"). */}
       {goalReached ? (
         <View style={[styles.goalOverlay, { backgroundColor: colors.overlay }]}>
-          <View style={[styles.goalCard, { backgroundColor: colors.card }]}>
+          <View
+            style={[
+              styles.goalCard,
+              { backgroundColor: colors.card, borderColor: colors.line },
+              resolvedMode === 'light' && styles.goalCardShadow,
+            ]}
+          >
             <View style={[styles.goalCheck, { backgroundColor: colors.brand }]}>
               <Text style={[styles.goalCheckMark, { color: colors.onBrand }]}>✓</Text>
             </View>
@@ -410,8 +422,16 @@ const styles = StyleSheet.create({
   sheet: {
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
+    borderTopWidth: 1,
     padding: spacing.lg,
     paddingBottom: spacing.xl,
+  },
+  sheetShadow: {
+    shadowColor: '#0F1729',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    elevation: 8,
   },
   sheetHandle: {
     alignSelf: 'center',
@@ -432,13 +452,16 @@ const styles = StyleSheet.create({
   goalCard: {
     alignItems: 'center',
     borderRadius: radius.xl,
+    borderWidth: 1,
     paddingVertical: spacing.xl,
     paddingHorizontal: spacing.xl * 1.5,
     gap: spacing.md,
-    shadowColor: '#000',
+  },
+  goalCardShadow: {
+    shadowColor: '#0F1729',
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
     elevation: 10,
   },
   goalCheck: {

@@ -86,6 +86,20 @@ export const lightColors: ColorScale = {
   onBrand: '#FFFFFF',
 };
 
+/**
+ * Adds alpha to a "#RRGGBB" hex color -> "rgba(r,g,b,a)". Used for the soft
+ * gradient icon tiles (mirrors web's `from-brand-500/20 to-brand-700/5` and
+ * `ring-brand/15` opacity-modifier pattern, which RN can't express via a flat
+ * hex token).
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export const darkColors: ColorScale = {
   paper: '#0B111E',
   card: '#111827',

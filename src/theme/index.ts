@@ -6,6 +6,6 @@
  */
 export { ThemeProvider, useTheme } from './ThemeContext';
 export type { ThemeMode, ResolvedMode } from './ThemeContext';
-export { lightColors, darkColors } from './colors';
+export { lightColors, darkColors, withAlpha } from './colors';
 export type { ColorScale } from './colors';
-export { radius, spacing, type } from './tokens';
+export { radius, spacing, type, inputChrome } from './tokens';
