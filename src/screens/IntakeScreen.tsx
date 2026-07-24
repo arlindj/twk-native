@@ -15,9 +15,24 @@ import { useSession } from '../state/sessionStore';
 import { inputChrome, radius, spacing, type, useTheme } from '../theme';
 
 /**
+ * Fallback usability-testing personas, used when a study's intake config
+ * ships no `roleOptions` (nothing configured on the web builder side) so
+ * the chip row is never just a single bare "Other".
+ */
+const DEFAULT_ROLE_OPTIONS = [
+  'Product Designer',
+  'Product Manager',
+  'Developer',
+  'Marketer',
+  'Student',
+  'Regular user',
+];
+
+/**
  * Guest intake — no login. Tester self-reports name, age, and role so the
  * web dashboard can attach results to user personas. Fields shown come from
- * bootstrap.intake (study-configurable).
+ * bootstrap.intake (study-configurable). Only the name is required — age
+ * and role are optional context.
  */
 export function IntakeScreen() {
   const { colors, resolvedMode } = useTheme();
@@ -40,11 +55,13 @@ export function IntakeScreen() {
   if (!bootstrap || !intake) return null;
 
   const nameOk = !intake.askFullName || fullName.trim().length >= 2;
-  const ageOk =
-    !intake.askAge || (age != null && age >= 13 && age <= 120 && ageText.trim().length > 0);
+  // Age and role are optional: an empty field never blocks continuing, but
+  // an age the tester did type in is still sanity-checked before it's sent.
+  const ageOk = ageText.trim().length === 0 || (age != null && age >= 13 && age <= 120);
   const roleValue = role.trim();
-  const roleOk = !intake.askRole || roleValue.length >= 2;
-  const canContinue = nameOk && ageOk && roleOk;
+  const canContinue = nameOk && ageOk;
+
+  const roleOptions = intake.roleOptions.length > 0 ? intake.roleOptions : DEFAULT_ROLE_OPTIONS;
 
   const onContinue = async () => {
     if (!canContinue || busy) return;
@@ -52,8 +69,8 @@ export function IntakeScreen() {
     try {
       await submitIntake({
         fullName: intake.askFullName ? fullName.trim() : undefined,
-        age: intake.askAge ? age : undefined,
-        role: intake.askRole ? roleValue : undefined,
+        age: intake.askAge && ageOk ? age : undefined,
+        role: intake.askRole && roleValue ? roleValue : undefined,
       });
     } finally {
       setBusy(false);
@@ -100,7 +117,7 @@ export function IntakeScreen() {
             ) : null}
 
             {intake.askAge ? (
-              <Field label="Age" required>
+              <Field label="Age">
                 <TextInput
                   value={ageText}
                   onChangeText={(t) => setAgeText(t.replace(/[^0-9]/g, '').slice(0, 3))}
@@ -119,9 +136,9 @@ export function IntakeScreen() {
             ) : null}
 
             {intake.askRole ? (
-              <Field label="Your role" required>
+              <Field label="Your role">
                 <View style={styles.chips}>
-                  {intake.roleOptions.map((option) => {
+                  {roleOptions.map((option) => {
                     const selected = !customRole && role === option;
                     return (
                       <Pressable
