@@ -42,6 +42,20 @@ class ScreenRecordService : Service() {
     private const val NOTIFICATION_ID = 87131
     private const val CHANNEL_ID = "twk_screen_recording"
 
+    /**
+     * Encode budget — kept in step with iOS (ScreenRecorderModule.swift).
+     *
+     * This used to be 6 Mbps at near-native resolution, i.e. ~45 MB/min, which
+     * meant a session longer than about a minute produced a video too big for
+     * the upload endpoint to accept. 1.0 Mbps video + 64 kbps mono audio is
+     * ~8 MB/min, and on flat prototype UI H.264 barely spends its budget
+     * outside screen transitions.
+     */
+    private const val MAX_LONG_EDGE = 1280
+    private const val VIDEO_BITRATE = 1_000_000
+    private const val AUDIO_BITRATE = 64_000
+    private const val TARGET_FPS = 30
+
     /** Set by the service; observed by the module. */
     @Volatile var isRecording: Boolean = false
     @Volatile var lastOutputFile: String? = null
@@ -141,8 +155,13 @@ class ScreenRecordService : Service() {
       mediaProjection = projection
 
       val metrics = currentMetrics()
-      // Encoder-friendly even dimensions, capped at 1080p-ish width.
-      val scale = if (metrics.widthPixels > 1080) 1080f / metrics.widthPixels else 1f
+      // Encoder-friendly even dimensions, capped so the LONG edge is at most
+      // MAX_LONG_EDGE. Prototype screens are flat UI, so 720p-class is still
+      // legible, and pixel count is the biggest lever on encoded size. (This
+      // used to cap the *width* at 1080, which on a portrait phone left the
+      // long edge — the expensive one — untouched.)
+      val longEdge = maxOf(metrics.widthPixels, metrics.heightPixels)
+      val scale = if (longEdge > MAX_LONG_EDGE) MAX_LONG_EDGE.toFloat() / longEdge else 1f
       val width = ((metrics.widthPixels * scale).toInt() / 2) * 2
       val height = ((metrics.heightPixels * scale).toInt() / 2) * 2
 
@@ -160,12 +179,13 @@ class ScreenRecordService : Service() {
       recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
       recorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
       recorder.setVideoSize(width, height)
-      recorder.setVideoFrameRate(30)
-      recorder.setVideoEncodingBitRate(6_000_000)
+      recorder.setVideoFrameRate(TARGET_FPS)
+      recorder.setVideoEncodingBitRate(VIDEO_BITRATE)
       if (withAudio) {
         recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-        recorder.setAudioEncodingBitRate(128_000)
+        recorder.setAudioEncodingBitRate(AUDIO_BITRATE)
         recorder.setAudioSamplingRate(44_100)
+        recorder.setAudioChannels(1)
       }
       recorder.setOutputFile(file.absolutePath)
       recorder.prepare()
