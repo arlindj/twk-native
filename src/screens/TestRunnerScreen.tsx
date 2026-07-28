@@ -1,6 +1,6 @@
 import { RouteProp, useRoute } from '@react-navigation/native';
 import React, { useEffect } from 'react';
-import { Alert, AppState, BackHandler } from 'react-native';
+import { Alert, AppState, BackHandler, StyleSheet, View } from 'react-native';
 import { RootStackParamList } from '../navigation';
 import { useSession } from '../state/sessionStore';
 import { ConsentScreen } from './ConsentScreen';
@@ -73,6 +73,37 @@ export function TestRunnerScreen() {
     return () => sub.remove();
   }, []);
 
+  // URL-backed prototypes (figma_proto / live_url) used to start loading only
+  // once the participant tapped "Start task" — so the first thing they saw of
+  // the test was the WebView's blank white page for the length of a cold Figma
+  // load (no spinner, no context) until Figma's own viewer booted far enough to
+  // draw its progress bar.
+  //
+  // Both phases render the player at the SAME position with the same `key`, so
+  // React reuses the element and the WebView survives the transition: it starts
+  // fetching during `task_intro` (inactive, nothing recorded — see PlayerScreen's
+  // `active` guards) while the participant reads the task, and "Start task" only
+  // lifts the intro off an already-warm prototype. Putting the player inside the
+  // phase switch instead would change its position in the tree between phases,
+  // remounting the WebView and refetching from scratch.
+  //
+  // Graph prototypes render from bundled images with no page to fetch, so they
+  // stay on the plain switch below — there is nothing to warm up.
+  if (!isGraphPrototype && (phase === 'task_intro' || phase === 'testing')) {
+    const testing = phase === 'testing';
+    return (
+      <View style={styles.fill}>
+        {/* key per task: a task can carry its own startUrl. */}
+        <PlayerScreen key={currentTaskIndex} active={testing} />
+        {!testing ? (
+          <View style={StyleSheet.absoluteFill}>
+            <TaskIntroScreen />
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   switch (phase) {
     case 'idle':
     case 'resolving':
@@ -89,17 +120,15 @@ export function TestRunnerScreen() {
     case 'permission_denied':
       return <PermissionScreen />;
     case 'task_intro':
+      // Non-graph prototypes never reach here — handled by the preload branch
+      // above.
       return <TaskIntroScreen />;
     case 'testing':
       // A confirmed clickable Figma graph has no URL to load — it renders
       // natively (screens-as-images + hotspots). Remounted per task, like
       // the web GraphPlayer's `key={current.id}`: each mission restarts
       // from the study's shared graph start screen.
-      return isGraphPrototype ? (
-        <GraphPlayerScreen key={currentTaskIndex} />
-      ) : (
-        <PlayerScreen />
-      );
+      return <GraphPlayerScreen key={currentTaskIndex} />;
     case 'interrupted':
       return <InterruptedScreen />;
     case 'task_questions':
@@ -115,3 +144,7 @@ export function TestRunnerScreen() {
       return <DoneScreen />;
   }
 }
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+});
