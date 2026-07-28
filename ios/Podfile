@@ -30,5 +30,22 @@ target 'TWKParticipate' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # Some transitive pods still declare ancient minimums (react-native-view-shot
+    # ships 9.0, react-native-blob-util 11.0), which Xcode 26 warns about on
+    # every build: "deployment target ... is set to 9.0, but the range of
+    # supported deployment target versions is 12.0 to 26.5.99". Raising anything
+    # below the app's own floor silences the warnings without changing what we
+    # actually support — the app target stays the source of truth.
+    app_min = Gem::Version.new(min_ios_version_supported.to_s)
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        pod_min = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+        next if pod_min.nil? || pod_min.to_s.empty?
+        if Gem::Version.new(pod_min.to_s) < app_min
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported.to_s
+        end
+      end
+    end
   end
 end
