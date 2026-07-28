@@ -24,6 +24,34 @@ export class RecordingFileMissingError extends Error {
   }
 }
 
+/**
+ * Object storage refused the file for exceeding its maximum object size.
+ * Retrying is pointless — the file will be exactly as big next time — so this
+ * is terminal like RecordingFileMissingError: the caller drops the segment and
+ * still finalizes the session (taps, answers and outcomes are unaffected).
+ *
+ * Supabase Storage reports this as HTTP **400** with a body of
+ * `{"statusCode":"413","error":"Payload too large","message":"The object
+ * exceeded the maximum allowed size"}` — the 413 lives in the body, not the
+ * status line, which is why a plain status check reads it as a generic 400.
+ * The ceiling that bites is the *project-wide* upload limit, which is lower
+ * than the bucket's own file_size_limit; it is deliberately NOT duplicated
+ * here as a constant, because raising it server-side must not require an app
+ * release to take effect.
+ */
+export class RecordingTooLargeError extends Error {
+  constructor(readonly fileSizeBytes: number) {
+    super(`Recording too large for storage: ${fileSizeBytes} bytes`);
+  }
+}
+
+/** True when a storage response is a size rejection rather than a transient fault. */
+function isTooLargeResponse(status: number, body: string): boolean {
+  if (status === 413) return true;
+  if (status !== 400) return false;
+  return /"statusCode"\s*:\s*"?413"?|payload too large|exceeded the maximum/i.test(body);
+}
+
 /** blob-util fs APIs take plain paths, not file:// URIs. */
 function toPath(fileUri: string): string {
   return fileUri.startsWith('file://') ? decodeURI(fileUri.slice('file://'.length)) : fileUri;
@@ -73,6 +101,18 @@ export async function uploadRecording(opts: {
       );
       const status = res.info().status;
       if (status < 200 || status >= 300) {
+        let body = '';
+        try {
+          // blob-util types this as string | Promise<any> depending on how the
+          // response was buffered; awaiting covers both.
+          body = String((await res.text()) ?? '');
+        } catch {
+          /* body unavailable — fall through to the generic message */
+        }
+        if (isTooLargeResponse(status, body)) {
+          // Terminal: rethrown as-is below so the retry loop can't swallow it.
+          throw new RecordingTooLargeError(fileSizeBytes);
+        }
         throw new Error(`Storage upload failed with status ${status}`);
       }
 
@@ -94,6 +134,10 @@ export async function uploadRecording(opts: {
       await ReactNativeBlobUtil.fs.unlink(path).catch(() => undefined);
       return payload;
     } catch (err) {
+      // A size rejection is deterministic — burning three more attempts (and
+      // three more full-file uploads on the participant's cellular data)
+      // cannot change the outcome.
+      if (err instanceof RecordingTooLargeError) throw err;
       lastError = err;
       onProgress?.({ state: 'failed_retryable', attempt });
       await new Promise<void>((r) => setTimeout(() => r(), 1000 * 2 ** attempt));

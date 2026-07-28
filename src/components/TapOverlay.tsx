@@ -14,6 +14,7 @@ export function TapOverlay({
   taskId,
   getPrototypeScreenId,
   onTap,
+  enabled = true,
   children,
 }: {
   taskId: string;
@@ -21,10 +22,18 @@ export function TapOverlay({
   getPrototypeScreenId?: () => string | undefined;
   /** Fired after each observed tap (used to schedule frame captures). */
   onTap?: () => void;
+  /**
+   * False while the player is only preloading its prototype (see
+   * PlayerScreen's `active`): touches still pass straight through, they just
+   * aren't recorded, so a stray tap before the task starts can't land in the
+   * session as evidence.
+   */
+  enabled?: boolean;
   children: React.ReactNode;
 }) {
   const onCapture = useCallback(
     (e: GestureResponderEvent) => {
+      if (!enabled) return false;
       const { pageX, pageY } = e.nativeEvent;
       const { width, height } = Dimensions.get('window');
       const prototypeScreenId = getPrototypeScreenId?.();
@@ -43,7 +52,7 @@ export function TapOverlay({
       });
       return false; // never claim the touch — the prototype must receive it
     },
-    [taskId, getPrototypeScreenId, onTap],
+    [enabled, taskId, getPrototypeScreenId, onTap],
   );
 
   return (

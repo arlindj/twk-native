@@ -21,7 +21,13 @@ import {
   startSessionRecording,
   stopSessionRecording,
 } from '../recording/recorder';
-import { RecordingFileMissingError, uploadRecording, UploadProgress } from '../upload/uploader';
+import {
+  RecordingFileMissingError,
+  RecordingTooLargeError,
+  uploadRecording,
+  UploadProgress,
+} from '../upload/uploader';
+import { describeFailure, type FailureMessage, type LostSegmentReason } from '../lib/failureMessages';
 import {
   AnswerPayload,
   BootstrapPayload,
@@ -186,6 +192,7 @@ interface SessionSnapshot {
   audioRecordingConsent: boolean;
   pendingSegments: FinishedRecording[];
   lostSegments: number;
+  lostSegmentReasons: LostSegmentReason[];
 }
 
 /** Phases worth resuming after a cold kill. */
@@ -205,6 +212,8 @@ const RESUMABLE_PHASES: Phase[] = [
 interface SessionState {
   phase: Phase;
   error?: string;
+  /** Structured, participant-facing description of the last failure. */
+  failure?: FailureMessage;
   bootstrap?: BootstrapPayload;
   sessionId?: string;
   /** Test token this session was started from — anchors crash recovery. */
@@ -229,6 +238,13 @@ interface SessionState {
   pendingSegments: FinishedRecording[];
   /** Segments that could not be saved/uploaded — surfaced to the participant. */
   lostSegments: number;
+  /**
+   * Why each lost segment was dropped, so the done screen can name the cause
+   * instead of only counting ("…could not be saved because the video was larger
+   * than the server accepts"). Parallel to `lostSegments`, not keyed by index —
+   * the participant only ever sees the set of distinct reasons.
+   */
+  lostSegmentReasons: LostSegmentReason[];
   /** Phase to return to after an interruption. */
   interruptedFrom?: Phase;
   /** sessionElapsedMs() when the current task started — for its outcome's duration_ms. */
@@ -250,6 +266,13 @@ interface SessionState {
   resumeTest: () => Promise<void>;
   finishSession: () => Promise<void>;
   retryUpload: () => Promise<void>;
+  /**
+   * Give up on the still-pending recording segments and finalize anyway.
+   * Offered when the failure is provably permanent (an oversize video), where
+   * "Try again" would loop forever and strand the answers the participant
+   * already gave.
+   */
+  finishWithoutRecording: () => Promise<void>;
   reset: () => void;
 }
 
@@ -319,6 +342,7 @@ function persistSnapshot(s: SessionState) {
     audioRecordingConsent: s.audioRecordingConsent,
     pendingSegments: s.pendingSegments,
     lostSegments: s.lostSegments,
+    lostSegmentReasons: s.lostSegmentReasons,
   };
   void AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
 }
@@ -340,6 +364,7 @@ export const useSession = create<SessionState>((set, get) => ({
   participantProfile: undefined,
   pendingSegments: [],
   lostSegments: 0,
+  lostSegmentReasons: [],
 
   resolveFromToken: async (testToken, apiOverride) => {
     // A new deep link can arrive while a session is mid-flight (user
@@ -371,7 +396,15 @@ export const useSession = create<SessionState>((set, get) => ({
         await initQueue(snap.sessionId, APP_VERSION);
         await initAnswersOutbox(snap.sessionId);
         const pendingSegments = await filterExistingSegments(snap.pendingSegments);
-        const lostSegments = snap.lostSegments + (snap.pendingSegments.length - pendingSegments.length);
+        // Segments whose file vanished while the app was dead are lost for the
+        // same reason RecordingFileMissingError covers — the OS reclaimed the
+        // cache — so they carry that cause into the done screen too.
+        const evictedCount = snap.pendingSegments.length - pendingSegments.length;
+        const lostSegments = snap.lostSegments + evictedCount;
+        const lostSegmentReasons: LostSegmentReason[] = [
+          ...(snap.lostSegmentReasons ?? []),
+          ...Array.from({ length: Math.max(0, evictedCount) }, () => 'file_missing' as const),
+        ];
         const task = bootstrap.tasks[snap.currentTaskIndex];
         const pendingQuestions =
           snap.phase === 'task_questions' && task
@@ -394,6 +427,7 @@ export const useSession = create<SessionState>((set, get) => ({
           audioRecordingConsent: snap.audioRecordingConsent ?? true,
           pendingSegments,
           lostSegments,
+          lostSegmentReasons,
           pendingQuestions,
           answers: [],
           phase: midTest ? 'interrupted' : uploadPhase ? 'upload_failed' : snap.phase,
@@ -441,6 +475,7 @@ export const useSession = create<SessionState>((set, get) => ({
         answers: [],
         pendingSegments: [],
         lostSegments: 0,
+        lostSegmentReasons: [],
       });
     } catch (err) {
       const message =
@@ -618,7 +653,10 @@ export const useSession = create<SessionState>((set, get) => ({
         track('recording_discarded', {
           meta: { segment: get().pendingSegments.length, reason: 'stop_failed' },
         });
-        set({ lostSegments: get().lostSegments + 1 });
+        set({
+          lostSegments: get().lostSegments + 1,
+          lostSegmentReasons: [...get().lostSegmentReasons, 'stop_failed'],
+        });
         void discardSessionRecording();
       }
     }
@@ -698,7 +736,10 @@ export const useSession = create<SessionState>((set, get) => ({
         track('recording_discarded', {
           meta: { segment: get().pendingSegments.length, reason: 'stop_failed_background' },
         });
-        set({ lostSegments: get().lostSegments + 1 });
+        set({
+          lostSegments: get().lostSegments + 1,
+          lostSegmentReasons: [...get().lostSegmentReasons, 'stop_failed'],
+        });
         void discardSessionRecording();
       }
     }
@@ -761,15 +802,32 @@ export const useSession = create<SessionState>((set, get) => ({
               set({ uploadProgress: { ...p, segment: seg.segment + 1, totalSegments } }),
           });
         } catch (err) {
-          if (err instanceof RecordingFileMissingError) {
-            // The file is gone for good (cache evicted / crash orphaned
-            // it) — retrying forever would strand the participant here.
+          // Two permanently-unsendable cases. Both drop the segment and carry
+          // on rather than aborting finishSession: everything after this loop
+          // (answers, the beat stream, completeSession) is what turns the run
+          // into a usable result, so letting one video kill the whole session
+          // throws away all the evidence the participant actually produced.
+          // DoneScreen reports the gap honestly via `lostSegments`.
+          const terminal =
+            err instanceof RecordingFileMissingError
+              ? 'file_missing'
+              : err instanceof RecordingTooLargeError
+                ? 'too_large'
+                : null;
+          if (terminal) {
             track('recording_discarded', {
-              meta: { segment: seg.segment, reason: 'file_missing' },
+              meta: {
+                segment: seg.segment,
+                reason: terminal,
+                ...(err instanceof RecordingTooLargeError
+                  ? { fileSizeBytes: err.fileSizeBytes }
+                  : {}),
+              },
             });
             set({
               pendingSegments: get().pendingSegments.slice(1),
               lostSegments: get().lostSegments + 1,
+              lostSegmentReasons: [...get().lostSegmentReasons, terminal],
             });
             continue;
           }
@@ -791,14 +849,36 @@ export const useSession = create<SessionState>((set, get) => ({
       set({ phase: 'done' });
     } catch (err) {
       setUploadState('failed_retryable');
-      set({
-        phase: 'upload_failed',
-        error: err instanceof Error ? err.message : 'Upload failed.',
-      });
+      // Keep the raw error, not a pre-flattened string: UploadScreen runs it
+      // through describeFailure() so the participant sees what actually went
+      // wrong (offline vs. expired session vs. server fault) instead of one
+      // generic "Upload failed."
+      set({ phase: 'upload_failed', error: undefined, failure: describeFailure(err, 'upload') });
     }
   },
 
   retryUpload: async () => {
+    await get().finishSession();
+  },
+
+  finishWithoutRecording: async () => {
+    const dropped = get().pendingSegments;
+    if (dropped.length > 0) {
+      for (const seg of dropped) {
+        track('recording_discarded', {
+          meta: { segment: seg.segment, reason: 'user_skipped_unsendable' },
+        });
+      }
+      set({
+        pendingSegments: [],
+        lostSegments: get().lostSegments + dropped.length,
+        lostSegmentReasons: [
+          ...get().lostSegmentReasons,
+          ...dropped.map(() => 'too_large' as const),
+        ],
+      });
+    }
+    set({ failure: undefined, error: undefined });
     await get().finishSession();
   },
 
@@ -826,6 +906,7 @@ export const useSession = create<SessionState>((set, get) => ({
       uploadProgress: undefined,
       pendingSegments: [],
       lostSegments: 0,
+      lostSegmentReasons: [],
       interruptedFrom: undefined,
     });
   },

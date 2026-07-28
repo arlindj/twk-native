@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Button, Callout, PageHeader, Screen } from '../components/ui';
 import { resetToHome } from '../navigation';
+import { describeLostSegments } from '../lib/failureMessages';
 import { useSession } from '../state/sessionStore';
 import { spacing, type, useTheme } from '../theme';
 
@@ -15,19 +16,35 @@ export function UploadScreen() {
   const phase = useSession((s) => s.phase);
   const progress = useSession((s) => s.uploadProgress);
   const error = useSession((s) => s.error);
+  const failure = useSession((s) => s.failure);
   const retryUpload = useSession((s) => s.retryUpload);
+  const finishWithoutRecording = useSession((s) => s.finishWithoutRecording);
 
   if (phase === 'upload_failed') {
+    // `failure` names the actual cause (too large / offline / expired session /
+    // server fault). `error` is the legacy plain-string path, kept as a fallback
+    // so an older persisted snapshot still shows something useful.
+    const title = failure?.title ?? 'Upload didn’t finish';
+    const detail =
+      failure?.detail ?? error ?? 'Your recording is saved safely on this device — nothing is lost.';
     return (
-      <Screen footer={<Button label="Retry upload" onPress={() => void retryUpload()} />}>
-        <PageHeader
-          icon="upload-cloud"
-          title="Upload didn’t finish"
-          subtitle="Your recording is saved safely on this device — nothing is lost."
-        />
-        {error ? (
-          <Callout icon="alert-triangle" tone="warning">
-            <Text style={[type.caption, { color: colors.ink }]}>{error}</Text>
+      <Screen
+        footer={
+          failure && !failure.retryable ? (
+            // Retrying cannot change the outcome, so the only honest action is
+            // to finish the session without this video.
+            <Button label="Finish without the video" onPress={() => void finishWithoutRecording()} />
+          ) : (
+            <Button label="Try again" onPress={() => void retryUpload()} />
+          )
+        }
+      >
+        <PageHeader icon="upload-cloud" title={title} subtitle={detail} />
+        {failure?.technical ? (
+          <Callout icon="info">
+            <Text style={[type.caption, { color: colors.ink3 }]}>
+              Details for the research team: {failure.technical}
+            </Text>
           </Callout>
         ) : null}
       </Screen>
@@ -60,6 +77,7 @@ export function DoneScreen() {
   const { colors } = useTheme();
   const reset = useSession((s) => s.reset);
   const lostSegments = useSession((s) => s.lostSegments);
+  const lostSegmentReasons = useSession((s) => s.lostSegmentReasons);
   return (
     <Screen
       footer={
@@ -81,9 +99,7 @@ export function DoneScreen() {
       {lostSegments > 0 ? (
         <Callout icon="alert-triangle" tone="warning">
           <Text style={[type.caption, { color: colors.ink }]}>
-            {lostSegments === 1
-              ? 'One part of the screen recording could not be saved, but your taps and answers were submitted in full.'
-              : `${lostSegments} parts of the screen recording could not be saved, but your taps and answers were submitted in full.`}
+            {describeLostSegments(lostSegments, lostSegmentReasons)}
           </Text>
         </Callout>
       ) : null}

@@ -1,6 +1,6 @@
 import { useKeepAwake } from '../native/keepAwake';
-import React, { useRef, useState } from 'react';
-import { Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { WebView } from 'react-native-webview';
@@ -98,8 +98,16 @@ true;
  * screen keys and the timeline of those keys drives per-screen heatmaps.
  * This works for any prototype the WebView can display — it needs nothing
  * from the viewer (no DOM, no URL changes, no postMessage API).
+ *
+ * `active` splits mounting from running. TestRunnerScreen mounts this during
+ * `task_intro` too, with `active={false}`, so the WebView spends the seconds
+ * the participant is reading the task actually fetching Figma (DNS, TLS, the
+ * viewer bundle, canvas boot) instead of starting cold the instant they tap
+ * "Start task". While inactive nothing is recorded — no beats, no frame
+ * captures, no task chrome — the WebView only loads. See the `active` guards
+ * on onScreenChange / doCapture / onNavigationStateChange below.
  */
-export function PlayerScreen() {
+export function PlayerScreen({ active = true }: { active?: boolean }) {
   useKeepAwake();
   const { colors, resolvedMode } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
@@ -109,15 +117,37 @@ export function PlayerScreen() {
   const [taskSheet, setTaskSheet] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [goalReached, setGoalReached] = useState(false);
+  // Drives the loading veil. Without it the participant stares at the
+  // WebView's own blank white page for the whole fetch — no spinner, no
+  // context, nothing — until Figma's viewer boots far enough to draw its own
+  // progress bar.
+  const [ready, setReady] = useState(false);
   const currentScreenId = useRef<string>('entry');
   const webviewRef = useRef<WebView>(null);
   const captureAreaRef = useRef<View>(null);
   const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureBusy = useRef(false);
+  const readyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Read inside WebView callbacks, which capture the value from the render
+  // that installed them — a stale `active` there would let a preload write
+  // beats into the session.
+  const activeRef = useRef(active);
+  activeRef.current = active;
   // Fires the auto-complete exactly once per task, even though the goal
   // screen can arrive from both signal sources (bridge + frame) and taps
   // can keep coming during the confirmation flash.
   const autoCompletedRef = useRef(false);
+
+  // Clear pending timers on unmount — this screen is torn down between tasks
+  // (task_questions) and a capture firing after that would post a frame
+  // against a task the participant already left.
+  useEffect(
+    () => () => {
+      if (captureTimer.current) clearTimeout(captureTimer.current);
+      if (readyTimer.current) clearTimeout(readyTimer.current);
+    },
+    [],
+  );
 
   /**
    * Single choke point for every prototype screen change, from either
@@ -130,6 +160,9 @@ export function PlayerScreen() {
   const onScreenChange = (screenId: string, source: 'webview' | 'frame') => {
     if (!screenId || screenId === currentScreenId.current) return;
     currentScreenId.current = screenId;
+    // Preload: track the screen id so the first real capture is keyed
+    // correctly, but emit nothing — the task hasn't started.
+    if (!activeRef.current) return;
     const activeTask = bootstrap?.tasks[index];
     track('prototype_navigation', {
       taskId: activeTask?.id,
@@ -156,6 +189,7 @@ export function PlayerScreen() {
   const isFrameCaptured = true;
 
   const doCapture = async () => {
+    if (!activeRef.current) return;
     if (!sessionId || captureBusy.current || !captureAreaRef.current) return;
     // Skip until the bridge has reported a real prototype screen id — a frame
     // captured under the placeholder 'entry' id pollutes the heatmap bases /
@@ -197,10 +231,22 @@ export function PlayerScreen() {
 
   /** Debounced: capture ~900ms after the last tap so transitions settle. */
   const scheduleCapture = () => {
-    if (!isFrameCaptured) return;
+    if (!isFrameCaptured || !activeRef.current) return;
     if (captureTimer.current) clearTimeout(captureTimer.current);
     captureTimer.current = setTimeout(() => void doCapture(), 900);
   };
+
+  // The task just started on an already-warm WebView: onLoadEnd fired during
+  // the preload, so its capture kick-off was suppressed. Take the opening
+  // frame now instead — otherwise the first frame for this task would only
+  // arrive after the participant's first tap.
+  useEffect(() => {
+    if (!active || !isFrameCaptured) return;
+    if (captureTimer.current) clearTimeout(captureTimer.current);
+    captureTimer.current = setTimeout(() => void doCapture(), 600);
+    // doCapture reads everything it needs through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   if (!bootstrap) return null;
   const task = bootstrap.tasks[index];
@@ -214,6 +260,7 @@ export function PlayerScreen() {
         taskId={task.id}
         getPrototypeScreenId={() => currentScreenId.current}
         onTap={scheduleCapture}
+        enabled={active}
       >
         {loadError ? (
           <View style={[styles.errorBox, { backgroundColor: colors.paper }]}>
@@ -241,8 +288,15 @@ export function PlayerScreen() {
             // Verified: same URL rendered fine in Safari while blank here.
             userAgent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
             injectedJavaScript={PROTOTYPE_BRIDGE_JS}
+            onLoadStart={() => setReady(false)}
             onLoadEnd={() => {
               webviewRef.current?.injectJavaScript(PROTOTYPE_BRIDGE_JS);
+              // The document is done but Figma still has to boot its viewer and
+              // paint the canvas — dropping the veil on onLoadEnd alone just
+              // swaps our spinner for Figma's blank white page. Hold it a beat
+              // longer so the hand-off lands on actual prototype pixels.
+              if (readyTimer.current) clearTimeout(readyTimer.current);
+              readyTimer.current = setTimeout(() => setReady(true), 1200);
               // Initial screen snapshot once the (possibly redirecting)
               // viewer settles.
               if (isFrameCaptured) {
@@ -284,11 +338,28 @@ export function PlayerScreen() {
             // leaves a silent white page (no onError). Reload recovers it.
             onContentProcessDidTerminate={() => webviewRef.current?.reload()}
             onNavigationStateChange={(nav) => {
-              if (nav.url) {
+              if (nav.url && activeRef.current) {
                 track('prototype_navigation', { taskId: task.id, meta: { url: nav.url } });
               }
             }}
           />
+
+          {/* Loading veil — covers the WebView's blank white page so the
+              participant sees branded, explained progress instead of an empty
+              screen. Sits INSIDE the capture area deliberately: a frame
+              snapshotted while the prototype is still blank should look blank,
+              and uploadFrame's `blank` detection reschedules on it. */}
+          {!ready ? (
+            <View style={[styles.veil, { backgroundColor: colors.paper }]} pointerEvents="none">
+              <ActivityIndicator size="large" color={colors.brand} />
+              <Text style={[type.h3, { color: colors.ink, marginTop: spacing.lg }]}>
+                Getting the prototype ready
+              </Text>
+              <Text style={[type.caption, { color: colors.ink3, marginTop: 4, textAlign: 'center' }]}>
+                This takes a moment on the first load.
+              </Text>
+            </View>
+          ) : null}
           </View>
         )}
       </TapOverlay>
@@ -296,8 +367,10 @@ export function PlayerScreen() {
       {/* Floating task bar — always dark chrome regardless of theme (like the
           web app's device-bezel exception): it overlays arbitrary prototype
           content, which can itself be light or dark, so it needs its own
-          fixed contrast rather than following the app's ink token. */}
-      <View style={styles.bar}>
+          fixed contrast rather than following the app's ink token.
+          Hidden while preloading: TaskIntroScreen is drawn over this whole
+          screen then, and a second task bar bleeding through would be wrong. */}
+      <View style={[styles.bar, !active && styles.hidden]} pointerEvents={active ? 'auto' : 'none'}>
         <Pressable style={styles.barTask} onPress={() => setTaskSheet(true)}>
           <View style={styles.barDot} />
           <Text numberOfLines={1} style={styles.barText}>
@@ -310,7 +383,7 @@ export function PlayerScreen() {
       </View>
 
       {/* Task sheet */}
-      <Modal visible={taskSheet} transparent animationType="slide" onRequestClose={() => setTaskSheet(false)}>
+      <Modal visible={active && taskSheet} transparent animationType="slide" onRequestClose={() => setTaskSheet(false)}>
         <Pressable style={[styles.sheetBackdrop, { backgroundColor: colors.overlay }]} onPress={() => setTaskSheet(false)} />
         <View
           style={[
@@ -353,7 +426,7 @@ export function PlayerScreen() {
 
       {/* Auto-complete modal — the app recognized the goal screen itself, so
           the participant only picks the next step (never "I completed it"). */}
-      {goalReached ? (
+      {active && goalReached ? (
         <View style={[styles.goalOverlay, { backgroundColor: colors.overlay }]}>
           <View
             style={[
@@ -385,6 +458,17 @@ export function PlayerScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  hidden: { opacity: 0 },
+  veil: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
   errorBox: {
     flex: 1,
     alignItems: 'center',
