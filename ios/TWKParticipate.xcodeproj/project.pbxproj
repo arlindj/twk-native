@@ -13,6 +13,9 @@
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		7AC0DE0000000000000000B1 /* ScreenRecorderModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC0DE0000000000000000A1 /* ScreenRecorderModule.swift */; };
 		7AC0DE0000000000000000B2 /* ScreenRecorderModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 7AC0DE0000000000000000A2 /* ScreenRecorderModule.m */; };
+		7AC0DE0000000000000000C1 /* LiquidGlassView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC0DE0000000000000000A5 /* LiquidGlassView.swift */; };
+		7AC0DE0000000000000000C2 /* LiquidGlassViewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC0DE0000000000000000A6 /* LiquidGlassViewManager.swift */; };
+		7AC0DE0000000000000000C3 /* LiquidGlassViewManager.m in Sources */ = {isa = PBXBuildFile; fileRef = 7AC0DE0000000000000000A7 /* LiquidGlassViewManager.m */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 /* End PBXBuildFile section */
 
@@ -29,6 +32,9 @@
 		7AC0DE0000000000000000A2 /* ScreenRecorderModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ScreenRecorderModule.m; path = TWKParticipate/ScreenRecorderModule.m; sourceTree = "<group>"; };
 		7AC0DE0000000000000000A3 /* TWKParticipate.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = TWKParticipate.entitlements; path = TWKParticipate/TWKParticipate.entitlements; sourceTree = "<group>"; };
 		7AC0DE0000000000000000A4 /* TWKParticipate-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "TWKParticipate-Bridging-Header.h"; path = "TWKParticipate/TWKParticipate-Bridging-Header.h"; sourceTree = "<group>"; };
+		7AC0DE0000000000000000A5 /* LiquidGlassView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiquidGlassView.swift; path = TWKParticipate/LiquidGlassView.swift; sourceTree = "<group>"; };
+		7AC0DE0000000000000000A6 /* LiquidGlassViewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiquidGlassViewManager.swift; path = TWKParticipate/LiquidGlassViewManager.swift; sourceTree = "<group>"; };
+		7AC0DE0000000000000000A7 /* LiquidGlassViewManager.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = LiquidGlassViewManager.m; path = TWKParticipate/LiquidGlassViewManager.m; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = TWKParticipate/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -52,6 +58,9 @@
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				7AC0DE0000000000000000A1 /* ScreenRecorderModule.swift */,
 				7AC0DE0000000000000000A2 /* ScreenRecorderModule.m */,
+				7AC0DE0000000000000000A5 /* LiquidGlassView.swift */,
+				7AC0DE0000000000000000A6 /* LiquidGlassViewManager.swift */,
+				7AC0DE0000000000000000A7 /* LiquidGlassViewManager.m */,
 				7AC0DE0000000000000000A4 /* TWKParticipate-Bridging-Header.h */,
 				7AC0DE0000000000000000A3 /* TWKParticipate.entitlements */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -82,7 +91,6 @@
 			children = (
 			);
 			name = Resources;
-			path = "";
 			sourceTree = "<group>";
 		};
 		83CBB9F61A601CBA00E9B192 = {
@@ -268,6 +276,9 @@
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				7AC0DE0000000000000000B1 /* ScreenRecorderModule.swift in Sources */,
 				7AC0DE0000000000000000B2 /* ScreenRecorderModule.m in Sources */,
+				7AC0DE0000000000000000C1 /* LiquidGlassView.swift in Sources */,
+				7AC0DE0000000000000000C2 /* LiquidGlassViewManager.swift in Sources */,
+				7AC0DE0000000000000000C3 /* LiquidGlassViewManager.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
