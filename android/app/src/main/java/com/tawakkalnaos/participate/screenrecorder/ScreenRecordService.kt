@@ -129,16 +129,36 @@ class ScreenRecordService : Service() {
   }
 
   /**
+   * Where finished segments live until the backend confirms the upload.
+   *
+   * This used to be `cacheDir`, which Android is free to delete when storage
+   * runs low — including while the app is not running. A segment waiting for a
+   * retry across an app restart is exactly what that directory does not
+   * guarantee, so a low-storage phone lost the video because of where we chose
+   * to put it. `filesDir` is only cleared when the app's data is cleared.
+   */
+  private fun recordingsDirectory(): File {
+    val dir = File(filesDir, "recordings")
+    if (!dir.exists()) dir.mkdirs()
+    return dir
+  }
+
+  /**
    * Removes session files left behind by a crashed/killed app. Only files
    * older than 6h are touched — segments of the current session that are
    * still waiting for upload must survive.
+   *
+   * Sweeps the legacy cache directory as well: a build installed over one that
+   * wrote there can still hold orphans nothing else would collect.
    */
   private fun cleanupStaleRecordings() {
     val cutoff = System.currentTimeMillis() - 6 * 3600 * 1000
-    cacheDir.listFiles()?.forEach { f ->
-      if (f.name.startsWith("twk-session-") && f.name.endsWith(".mp4")) {
-        val stamp = f.name.removePrefix("twk-session-").removeSuffix(".mp4").toLongOrNull()
-        if (stamp != null && stamp < cutoff) f.delete()
+    listOf(cacheDir, recordingsDirectory()).forEach { dir ->
+      dir.listFiles()?.forEach { f ->
+        if (f.name.startsWith("twk-session-") && f.name.endsWith(".mp4")) {
+          val stamp = f.name.removePrefix("twk-session-").removeSuffix(".mp4").toLongOrNull()
+          if (stamp != null && stamp < cutoff) f.delete()
+        }
       }
     }
   }
@@ -165,7 +185,7 @@ class ScreenRecordService : Service() {
       val width = ((metrics.widthPixels * scale).toInt() / 2) * 2
       val height = ((metrics.heightPixels * scale).toInt() / 2) * 2
 
-      val file = File(cacheDir, "twk-session-${System.currentTimeMillis()}.mp4")
+      val file = File(recordingsDirectory(), "twk-session-${System.currentTimeMillis()}.mp4")
       outputFile = file
 
       val recorder =
