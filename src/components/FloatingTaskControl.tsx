@@ -110,16 +110,27 @@ export function FloatingTaskControl({
       .catch(() => undefined);
   }, []);
 
-  // Auto-collapse after a pause. Restarts whenever `expanded` turns true —
-  // i.e. every time the participant interacts with it.
+  // Re-expand (and re-read) the moment this task actually becomes active.
+  // The component is mounted unconditionally by the parent screen from
+  // `task_intro` onward — long before `active` turns true — so without this
+  // the idle-collapse timer below would already be counting down (or have
+  // fired) against a control the participant can't even see yet, and it
+  // would land on the new task already collapsed instead of freshly opened.
   useEffect(() => {
-    if (!expanded) return;
+    if (active) setExpanded(true);
+  }, [active]);
+
+  // Auto-collapse after a pause. Restarts whenever `expanded` turns true —
+  // i.e. every time the participant interacts with it — and only counts
+  // down while actually visible.
+  useEffect(() => {
+    if (!active || !expanded) return;
     const timer = setTimeout(() => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       setExpanded(false);
     }, IDLE_COLLAPSE_MS);
     return () => clearTimeout(timer);
-  }, [expanded]);
+  }, [active, expanded]);
 
   const panResponder = useRef(
     PanResponder.create({
