@@ -350,12 +350,24 @@ export async function startRecordingSlot(_sessionId: string) {
  * without a write — they still ride the mobile-side event log for local
  * debugging, just not persisted server-side.
  */
-export async function sendEventBatch(sessionId: string, _idempotencyKey: string, events: SessionEvent[]) {
+export async function sendEventBatch(sessionId: string, idempotencyKey: string, events: SessionEvent[]) {
   const beats = events
     .map((e) => toBeat(e))
     .filter((b): b is NonNullable<ReturnType<typeof toBeat>> => b != null);
   if (beats.length > 0) {
-    await synth.post('/human-beats', { session_id: sessionId, beats });
+    // The idempotency key used to be computed by eventQueue and then dropped
+    // on the floor here (it was named `_idempotencyKey` and never sent), while
+    // /api/human-beats does a plain insert. So a batch whose POST reached the
+    // server but whose *response* was lost — the classic 5G↔Wi-Fi handoff —
+    // came back on the next flush and duplicated every click and navigation in
+    // it, inflating the heatmap, the path counts and the dwell times.
+    //
+    // Both keys are now transmitted: `idempotency_key` for the batch, and `bid`
+    // per beat (the stable event id, see toBeat) so the server can dedup at
+    // whichever granularity it implements. Until synth dedups, these are inert
+    // extra fields — the route ignores unknown keys — so this is the half of
+    // the fix that lives in this repo, not the whole fix.
+    await synth.post('/human-beats', { session_id: sessionId, beats, idempotency_key: idempotencyKey });
   }
   return { accepted: events.length };
 }
@@ -382,6 +394,9 @@ function toBeat(e: SessionEvent): Record<string, unknown> | null {
       screen,
       label: '',
       t: e.timestampMs,
+      // Stable per-beat id (evt_<sessionId>_<seq>) so a re-sent batch is
+      // recognizable as the same beats rather than new ones.
+      bid: e.eventId,
       ...(mi != null ? { mi } : {}),
     };
   }
@@ -397,6 +412,7 @@ function toBeat(e: SessionEvent): Record<string, unknown> | null {
       screen: screenId,
       event: 'screen_enter',
       t: e.timestampMs,
+      bid: e.eventId,
       ...(mi != null ? { mi } : {}),
     };
   }
@@ -453,22 +469,39 @@ export async function getUploadUrl(sessionId: string, recordingId: string, _file
   return { uploadUrl: upload_url, storageKey: storage_path };
 }
 
-export async function completeRecording(sessionId: string, payload: RecordingCompletePayload) {
-  await synth.post('/mobile/recordings/complete', {
-    session_id: sessionId,
-    recording_id: payload.recordingId,
-    storage_path: payload.storageKey,
-    segment: payload.segment,
-    duration_ms: payload.durationMs,
-    checksum: payload.checksum,
-    file_size_bytes: payload.fileSizeBytes,
-    width: payload.width,
-    height: payload.height,
-  });
+export async function completeRecording(
+  sessionId: string,
+  payload: RecordingCompletePayload,
+  timeoutMs?: number,
+) {
+  await synth.post(
+    '/mobile/recordings/complete',
+    {
+      session_id: sessionId,
+      recording_id: payload.recordingId,
+      storage_path: payload.storageKey,
+      segment: payload.segment,
+      duration_ms: payload.durationMs,
+      checksum: payload.checksum,
+      file_size_bytes: payload.fileSizeBytes,
+      width: payload.width,
+      height: payload.height,
+    },
+    timeoutMs,
+  );
   return { ok: true as const };
 }
 
-export async function completeSession(sessionId: string) {
+/**
+ * Closes the session row.
+ *
+ * Call this EXACTLY ONCE per session: `finalizeHumanSession` recomputes
+ * `real_duration_ms` as `now - started_at`, so a second call after a slow
+ * video upload would silently inflate the participant's measured
+ * time-on-task. Late diagnostics go through `writeSessionDiagnostics`
+ * instead (see sessionStore.resultsSubmitted).
+ */
+export async function completeSession(sessionId: string, notes?: string) {
   // ease_rating is required by synth's finalize contract; the post-test
   // "how was it" question (opinion_scale, scale 1-5) already collects this
   // as a normal answer via submitAnswers/sendAnswers above — finalize just
@@ -478,6 +511,7 @@ export async function completeSession(sessionId: string) {
     session_id: sessionId,
     completion: true,
     ease_rating: 3,
+    ...(notes ? { notes: notes.slice(0, 2000) } : {}),
   });
   return { ok: true as const };
 }

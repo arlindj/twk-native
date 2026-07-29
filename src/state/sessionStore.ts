@@ -5,12 +5,20 @@ import { create } from 'zustand';
 import { APP_VERSION as BUILD_VERSION, DEVICE_MODEL, LAUNCH_ID } from '../constants';
 import * as api from '../api/client';
 import * as SecureStore from '../native/secureStore';
-import { clearQueue, drain, initQueue, sessionElapsedMs, track } from '../events/eventQueue';
+import {
+  clearQueue,
+  drain,
+  initQueue,
+  lastFlushError,
+  sessionElapsedMs,
+  track,
+} from '../events/eventQueue';
 import {
   clearAnswersOutbox,
   drainAnswers,
   enqueueAnswers,
   initAnswersOutbox,
+  lastAnswersError,
 } from './answersOutbox';
 import {
   discardSessionRecording,
@@ -24,10 +32,19 @@ import {
 import {
   RecordingFileMissingError,
   RecordingTooLargeError,
+  segmentSizeBytes,
   uploadRecording,
   UploadProgress,
 } from '../upload/uploader';
-import { describeFailure, type FailureMessage, type LostSegmentReason } from '../lib/failureMessages';
+import {
+  describeFailure,
+  diagnosticsNote,
+  type FailureMessage,
+  type LostSegmentReason,
+} from '../lib/failureMessages';
+import { connectionInfo } from '../lib/connectivity';
+import { withTimeout } from '../lib/retry';
+import { isSessionFinalized, writeSessionDiagnostics } from '../lib/synthClient';
 import {
   AnswerPayload,
   BootstrapPayload,
@@ -71,6 +88,12 @@ export type Phase =
   | 'interrupted'
   | 'uploading'
   | 'upload_failed'
+  /**
+   * Results are in; only the video is left, and sending it right now would
+   * spend a noticeable amount of the participant's mobile data. Asking is only
+   * possible because the answers no longer depend on this upload.
+   */
+  | 'upload_metered'
   | 'done';
 
 export const APP_VERSION = BUILD_VERSION;
@@ -135,13 +158,13 @@ function mayUseApiOverride(apiOverride: string): boolean {
   return __DEV__ || isLocalApiTarget(apiOverride);
 }
 
-/** Rejects if `p` does not settle within `ms` — used to bound native calls. */
-function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
-  ]);
-}
+/**
+ * Above this, sending the video over a connection the OS calls expensive is
+ * worth asking about rather than assuming. At the recorder's measured
+ * ~2.4 MiB/min a 15 MB segment is roughly a six-minute test — short sessions
+ * still upload silently, which is the common case.
+ */
+const METERED_PROMPT_BYTES = 15 * 1024 * 1024;
 
 /**
  * Android 13+ drops the recording foreground-service notification unless
@@ -193,6 +216,13 @@ interface SessionSnapshot {
   pendingSegments: FinishedRecording[];
   lostSegments: number;
   lostSegmentReasons: LostSegmentReason[];
+  /**
+   * Whether answers + beats + finalize already succeeded for this session.
+   * Survives a cold kill because `completeSession` must run exactly once —
+   * finalize recomputes `real_duration_ms` from `started_at`, so a second call
+   * after a slow upload would inflate the participant's measured time-on-task.
+   */
+  resultsSubmitted: boolean;
 }
 
 /** Phases worth resuming after a cold kill. */
@@ -207,6 +237,7 @@ const RESUMABLE_PHASES: Phase[] = [
   'interrupted',
   'uploading',
   'upload_failed',
+  'upload_metered',
 ];
 
 interface SessionState {
@@ -245,6 +276,22 @@ interface SessionState {
    * the participant only ever sees the set of distinct reasons.
    */
   lostSegmentReasons: LostSegmentReason[];
+  /**
+   * True once the answers, task outcomes and beats are on the server and the
+   * session row is finalized. From this point the screen recording is the only
+   * thing outstanding, which is what lets the upload screen tell the truth
+   * ("your answers are already submitted") and lets the participant walk away
+   * from a stubborn video without losing the session.
+   */
+  resultsSubmitted: boolean;
+  /** Re-entrancy guard for finishSession — see the comment on the action. */
+  submitting: boolean;
+  /** Total bytes still to upload, for the metered-connection prompt. */
+  pendingUploadBytes?: number;
+  /** Participant chose to send the video over an expensive connection anyway. */
+  meteredUploadApproved: boolean;
+  /** Parked in `upload_metered`, watching for Wi-Fi to appear. */
+  waitingForWifi: boolean;
   /** Phase to return to after an interruption. */
   interruptedFrom?: Phase;
   /** sessionElapsedMs() when the current task started — for its outcome's duration_ms. */
@@ -267,12 +314,17 @@ interface SessionState {
   finishSession: () => Promise<void>;
   retryUpload: () => Promise<void>;
   /**
-   * Give up on the still-pending recording segments and finalize anyway.
-   * Offered when the failure is provably permanent (an oversize video), where
-   * "Try again" would loop forever and strand the answers the participant
-   * already gave.
+   * Give up on the still-pending recording segments and finish anyway.
+   * Offered when the failure is provably permanent (an oversize video) and,
+   * now that the results are submitted first, whenever the participant simply
+   * cannot get the video out — "Try again" forever is not a real option to
+   * offer someone who has already done the work.
    */
   finishWithoutRecording: () => Promise<void>;
+  /** Send the video over the expensive connection after all. */
+  uploadOverMeteredConnection: () => Promise<void>;
+  /** Park until Wi-Fi appears, then upload automatically. */
+  waitForWifiThenUpload: () => void;
   reset: () => void;
 }
 
@@ -296,6 +348,113 @@ function advancePastIntake(
     }
     set({ phase: 'task_intro', recordingEnabled: false, audioEnabled: false });
   }
+}
+
+type SetSession = (partial: Partial<SessionState>) => void;
+type GetSession = () => SessionState;
+
+/**
+ * Parks the session and asks before spending the participant's mobile data.
+ * Returns true when it parked (the caller must stop).
+ *
+ * This is only defensible because the results are already submitted by the time
+ * it runs: the study has its data, so waiting for Wi-Fi costs nothing but the
+ * video. Asking before that reordering would have meant holding the whole
+ * session hostage to a connectivity preference.
+ */
+async function maybeAskAboutMeteredUpload(set: SetSession, get: GetSession): Promise<boolean> {
+  if (get().meteredUploadApproved) return false;
+  const conn = await connectionInfo();
+  if (!conn.expensive) return false;
+
+  let bytes = 0;
+  for (const seg of get().pendingSegments) bytes += await segmentSizeBytes(seg.fileUri);
+  if (bytes < METERED_PROMPT_BYTES) return false;
+
+  track('recording_upload_deferred', {
+    meta: { reason: 'metered_connection', bytes, connectionType: conn.type },
+  });
+  set({ phase: 'upload_metered', pendingUploadBytes: bytes, waitingForWifi: false });
+  return true;
+}
+
+/**
+ * Uploads every pending segment in order. Successfully uploaded segments leave
+ * the pending list, so a retry never re-sends one that already landed.
+ */
+async function uploadPendingSegments(set: SetSession, get: GetSession, sessionId: string) {
+  const { width, height } = Dimensions.get('screen');
+  const totalSegments = get().pendingSegments.length;
+
+  while (get().pendingSegments.length > 0) {
+    const seg = get().pendingSegments[0];
+    setUploadState('uploading');
+    try {
+      await uploadRecording({
+        sessionId,
+        recordingId: `rec_${sessionId}_s${seg.segment}`,
+        fileUri: seg.fileUri,
+        durationMs: seg.durationMs,
+        segment: seg.segment,
+        width: Math.round(width * PixelRatio.get()),
+        height: Math.round(height * PixelRatio.get()),
+        onProgress: (p) =>
+          set({ uploadProgress: { ...p, segment: seg.segment + 1, totalSegments } }),
+      });
+    } catch (err) {
+      // Two permanently-unsendable cases. Both drop the segment and carry on:
+      // the results are already submitted, so one video that can never be sent
+      // must not turn into a dead end. DoneScreen reports the gap honestly via
+      // `lostSegments`, and `diagnosticsNote` carries the reason to the server.
+      const terminal =
+        err instanceof RecordingFileMissingError
+          ? 'file_missing'
+          : err instanceof RecordingTooLargeError
+            ? 'too_large'
+            : null;
+      if (terminal) {
+        track('recording_discarded', {
+          meta: {
+            segment: seg.segment,
+            reason: terminal,
+            ...(err instanceof RecordingTooLargeError ? { fileSizeBytes: err.fileSizeBytes } : {}),
+          },
+        });
+        set({
+          pendingSegments: get().pendingSegments.slice(1),
+          lostSegments: get().lostSegments + 1,
+          lostSegmentReasons: [...get().lostSegmentReasons, terminal],
+        });
+        continue;
+      }
+      throw err;
+    }
+    set({ pendingSegments: get().pendingSegments.slice(1) });
+    track('recording_uploaded', { meta: { segment: seg.segment } });
+  }
+  setUploadState('uploaded');
+}
+
+/**
+ * Last step: record why the evidence is incomplete (if it is), release the
+ * local queues, and show the done screen.
+ *
+ * The queues are cleared only from here, and only after delivery was actually
+ * confirmed — clearing them is destructive and used to happen unconditionally.
+ */
+async function concludeSession(set: SetSession, get: GetSession, sessionId: string) {
+  const note = diagnosticsNote(get().lostSegments, get().lostSegmentReasons);
+  if (note) await writeSessionDiagnostics(sessionId, note);
+  await clearQueue();
+  await clearAnswersOutbox();
+  clearSnapshot();
+  set({
+    phase: 'done',
+    uploadProgress: undefined,
+    waitingForWifi: false,
+    meteredUploadApproved: false,
+    pendingUploadBytes: undefined,
+  });
 }
 
 function questionsForTask(bootstrap: BootstrapPayload, taskId: string) {
@@ -328,9 +487,35 @@ async function readSnapshot(): Promise<SessionSnapshot | null> {
   }
 }
 
-function persistSnapshot(s: SessionState) {
-  if (!s.sessionId || !s.testToken || !RESUMABLE_PHASES.includes(s.phase)) return;
-  const snap: SessionSnapshot = {
+/** What an unfinished session left behind, for the welcome screen's resume offer. */
+export interface ResumableSession {
+  testToken: string;
+  phase: Phase;
+  /** True when only the screen recording is still outstanding. */
+  resultsSubmitted: boolean;
+}
+
+/**
+ * An unfinished session this device can pick up again, or null.
+ *
+ * Recovery used to be reachable only by re-opening the invite deep link or
+ * re-typing the code: a participant whose app was killed mid-upload landed on
+ * the welcome screen with no sign that anything was pending, and the session sat
+ * unfinalized on the server. The welcome screen can now offer to continue it.
+ */
+export async function findResumableSession(): Promise<ResumableSession | null> {
+  const snap = await readSnapshot();
+  if (!snap || !snap.testToken || !RESUMABLE_PHASES.includes(snap.phase)) return null;
+  return {
+    testToken: snap.testToken,
+    phase: snap.phase,
+    resultsSubmitted: snap.resultsSubmitted ?? false,
+  };
+}
+
+function snapshotOf(s: SessionState): SessionSnapshot | null {
+  if (!s.sessionId || !s.testToken || !RESUMABLE_PHASES.includes(s.phase)) return null;
+  return {
     testToken: s.testToken,
     sessionId: s.sessionId,
     apiBase: api.getApiBase(),
@@ -343,8 +528,31 @@ function persistSnapshot(s: SessionState) {
     pendingSegments: s.pendingSegments,
     lostSegments: s.lostSegments,
     lostSegmentReasons: s.lostSegmentReasons,
+    resultsSubmitted: s.resultsSubmitted,
   };
-  void AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+}
+
+/** Fire-and-forget snapshot write — used by the store subscription. */
+function persistSnapshot(s: SessionState) {
+  const snap = snapshotOf(s);
+  if (snap) void AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+}
+
+/**
+ * Awaited snapshot write, for the one transition where losing it matters:
+ * `resultsSubmitted`. Everything else in the snapshot is a convenience — being
+ * a step behind only costs the participant a repeated screen — but a lost
+ * `resultsSubmitted` makes a resumed session call finalize a second time and
+ * inflate its `real_duration_ms`.
+ */
+async function persistSnapshotNow(s: SessionState): Promise<void> {
+  const snap = snapshotOf(s);
+  if (!snap) return;
+  try {
+    await AsyncStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+  } catch {
+    /* isSessionFinalized() is the durable backstop on resume */
+  }
 }
 
 function clearSnapshot() {
@@ -365,6 +573,10 @@ export const useSession = create<SessionState>((set, get) => ({
   pendingSegments: [],
   lostSegments: 0,
   lostSegmentReasons: [],
+  resultsSubmitted: false,
+  submitting: false,
+  meteredUploadApproved: false,
+  waitingForWifi: false,
 
   resolveFromToken: async (testToken, apiOverride) => {
     // A new deep link can arrive while a session is mid-flight (user
@@ -415,7 +627,26 @@ export const useSession = create<SessionState>((set, get) => ({
         track('test_resumed', { meta: { toPhase: snap.phase, coldStart: true } });
 
         const midTest = ['task_intro', 'testing', 'task_questions', 'post_questions'].includes(snap.phase);
-        const uploadPhase = snap.phase === 'uploading' || snap.phase === 'upload_failed';
+        const uploadPhase =
+          snap.phase === 'uploading' ||
+          snap.phase === 'upload_failed' ||
+          snap.phase === 'upload_metered';
+        // A snapshot written before this field existed has no value for it;
+        // `false` is the safe default (submit again — every endpoint upserts).
+        // For a session that died during the submit phase, ask the server rather
+        // than trusting local storage: the flag is written after finalize
+        // returns, so a kill inside that window would otherwise cause a second
+        // finalize and inflate `real_duration_ms` by the whole downtime.
+        // A failed/offline check returns false, which re-finalizes — the safe
+        // direction, since the alternative is a session left `running` forever.
+        const resultsSubmitted =
+          (snap.resultsSubmitted ?? false) ||
+          (uploadPhase && (await isSessionFinalized(snap.sessionId)));
+        // Segments whose file vanished while the app was dead can no longer be
+        // uploaded, and if the results were already submitted there is nothing
+        // left for this session to do — going to `upload_failed` would strand
+        // the participant on a retry button that has nothing to retry.
+        const nothingLeftToSend = uploadPhase && resultsSubmitted && pendingSegments.length === 0;
         set({
           bootstrap,
           sessionId: snap.sessionId,
@@ -428,12 +659,31 @@ export const useSession = create<SessionState>((set, get) => ({
           pendingSegments,
           lostSegments,
           lostSegmentReasons,
+          resultsSubmitted,
+          submitting: false,
+          meteredUploadApproved: false,
+          waitingForWifi: false,
           pendingQuestions,
           answers: [],
-          phase: midTest ? 'interrupted' : uploadPhase ? 'upload_failed' : snap.phase,
+          phase: midTest
+            ? 'interrupted'
+            : nothingLeftToSend
+              ? 'done'
+              : uploadPhase
+                ? 'upload_failed'
+                : snap.phase,
           interruptedFrom: midTest ? snap.phase : undefined,
-          error: uploadPhase ? 'The upload was interrupted. Tap retry to finish.' : undefined,
+          error: uploadPhase && !nothingLeftToSend
+            ? 'The upload was interrupted. Tap retry to finish.'
+            : undefined,
         });
+        if (nothingLeftToSend) {
+          const note = diagnosticsNote(lostSegments, lostSegmentReasons);
+          if (note) void writeSessionDiagnostics(snap.sessionId, note);
+          void clearQueue();
+          void clearAnswersOutbox();
+          clearSnapshot();
+        }
         return;
       } catch {
         // Expired/invalid session — fall through to a fresh start.
@@ -724,6 +974,16 @@ export const useSession = create<SessionState>((set, get) => ({
     track('app_backgrounded');
 
     const { phase } = get();
+    // Backgrounding during the submit phase must NOT tear anything down. On iOS
+    // the JS thread is suspended here, which is exactly why the PUT asks UIKit
+    // for background execution time (uploader's IOSBackgroundTask); killing the
+    // transfer instead would strand a file that was already half sent. The
+    // event is still recorded so a truncated upload is explainable afterwards.
+    if (phase === 'uploading' || phase === 'upload_failed' || phase === 'upload_metered') {
+      track('test_interrupted', { meta: { fromPhase: phase, duringSubmit: true } });
+      return;
+    }
+
     const midTest = phase === 'testing' || phase === 'task_intro' || phase === 'task_questions';
     if (!midTest) return;
 
@@ -766,10 +1026,31 @@ export const useSession = create<SessionState>((set, get) => ({
     set({ phase: returnTo, interruptedFrom: undefined });
   },
 
+  /**
+   * End of session, in the order that matters.
+   *
+   * The old order was: upload the video, then the answers, then the beats, then
+   * finalize. That put the biggest, slowest, most failure-prone step in front of
+   * the three cheap steps that actually turn a run into a result — so a dead
+   * connection during a 40 MB transfer meant the session was never finalized at
+   * all. It stayed `running` in the database, the participant never saw a
+   * success page, and the answers they had already given sat on the phone.
+   *
+   * Now the results go first and the video last. Once `resultsSubmitted` is
+   * true, nothing that happens to the video can cost the study its data, which
+   * is also what makes it honest to offer "finish without the video" and to ask
+   * before spending the participant's mobile data.
+   *
+   * `submitting` guards re-entry: two overlapping runs (a double-tapped "Try
+   * again") would both read `pendingSegments[0]` and upload the same segment
+   * twice, and `recordings/start` deletes the stored object before re-signing,
+   * so the second run would delete the object the first one was still writing.
+   */
   finishSession: async () => {
-    const { sessionId, bootstrap } = get();
+    const { sessionId, bootstrap, submitting } = get();
     if (!sessionId || !bootstrap) return;
-    set({ phase: 'uploading', uploadProgress: undefined });
+    if (submitting) return;
+    set({ submitting: true, phase: 'uploading', uploadProgress: undefined, failure: undefined });
 
     try {
       // Safety net — recording should already be stopped by completeTask.
@@ -782,78 +1063,58 @@ export const useSession = create<SessionState>((set, get) => ({
         set({ pendingSegments: [...get().pendingSegments, segment] });
       }
 
-      const { width, height } = Dimensions.get('screen');
-      // Upload segments in order; successfully uploaded ones leave the
-      // pending list so a retry never re-uploads them.
-      const totalSegments = get().pendingSegments.length;
-      while (get().pendingSegments.length > 0) {
-        const seg = get().pendingSegments[0];
-        setUploadState('uploading');
-        try {
-          await uploadRecording({
-            sessionId,
-            recordingId: `rec_${sessionId}_s${seg.segment}`,
-            fileUri: seg.fileUri,
-            durationMs: seg.durationMs,
-            segment: seg.segment,
-            width: Math.round(width * PixelRatio.get()),
-            height: Math.round(height * PixelRatio.get()),
-            onProgress: (p) =>
-              set({ uploadProgress: { ...p, segment: seg.segment + 1, totalSegments } }),
-          });
-        } catch (err) {
-          // Two permanently-unsendable cases. Both drop the segment and carry
-          // on rather than aborting finishSession: everything after this loop
-          // (answers, the beat stream, completeSession) is what turns the run
-          // into a usable result, so letting one video kill the whole session
-          // throws away all the evidence the participant actually produced.
-          // DoneScreen reports the gap honestly via `lostSegments`.
-          const terminal =
-            err instanceof RecordingFileMissingError
-              ? 'file_missing'
-              : err instanceof RecordingTooLargeError
-                ? 'too_large'
-                : null;
-          if (terminal) {
-            track('recording_discarded', {
-              meta: {
-                segment: seg.segment,
-                reason: terminal,
-                ...(err instanceof RecordingTooLargeError
-                  ? { fileSizeBytes: err.fileSizeBytes }
-                  : {}),
-              },
-            });
-            set({
-              pendingSegments: get().pendingSegments.slice(1),
-              lostSegments: get().lostSegments + 1,
-              lostSegmentReasons: [...get().lostSegmentReasons, terminal],
-            });
-            continue;
-          }
-          throw err;
+      // ---- 1. The results ---------------------------------------------------
+      if (!get().resultsSubmitted) {
+        set({ error: undefined });
+        // The drains report success as a boolean and keep the data on disk when
+        // they fail. That return value used to be discarded, and the code then
+        // cleared both stores unconditionally — so a session that lost the
+        // network at exactly this point deleted the participant's unsent
+        // answers and beats and showed them "Thank you!". Nothing is cleared
+        // now unless delivery is confirmed.
+        if (!(await drainAnswers())) {
+          throw lastAnswersError() ?? new Error('Your answers could not be sent.');
         }
-        set({ pendingSegments: get().pendingSegments.slice(1) });
-        track('recording_uploaded', { meta: { segment: seg.segment } });
+        track('session_completed');
+        if (!(await drain())) {
+          throw lastFlushError() ?? new Error('Your session data could not be sent.');
+        }
+        // Exactly once per session — finalize recomputes real_duration_ms from
+        // started_at, so a second call after a slow upload would bill the
+        // upload time to the participant's time-on-task.
+        await api.completeSession(sessionId);
+        track('session_results_submitted');
+        set({ resultsSubmitted: true });
+        // Awaited, not fire-and-forget: if the process dies in the window
+        // between finalize returning and this write landing, a resumed session
+        // would finalize again and bill the dead time to the participant's
+        // time-on-task. `isSessionFinalized` on resume covers what a crash
+        // inside even this window would miss.
+        await persistSnapshotNow(get());
       }
-      setUploadState('uploaded');
 
-      // Answers first (values), then the event stream (their mirror).
-      await drainAnswers();
-      track('session_completed');
-      await drain();
-      await api.completeSession(sessionId);
-      await clearQueue();
-      await clearAnswersOutbox();
-      clearSnapshot();
-      set({ phase: 'done' });
+      // ---- 2. The video -----------------------------------------------------
+      if (get().pendingSegments.length > 0) {
+        const parked = await maybeAskAboutMeteredUpload(set, get);
+        if (parked) return;
+        await uploadPendingSegments(set, get, sessionId);
+      }
+
+      await concludeSession(set, get, sessionId);
     } catch (err) {
       setUploadState('failed_retryable');
-      // Keep the raw error, not a pre-flattened string: UploadScreen runs it
-      // through describeFailure() so the participant sees what actually went
-      // wrong (offline vs. expired session vs. server fault) instead of one
-      // generic "Upload failed."
-      set({ phase: 'upload_failed', error: undefined, failure: describeFailure(err, 'upload') });
+      // Keep the raw error, not a pre-flattened string: describeFailure turns it
+      // into copy that names the real cause (offline vs. expired session vs.
+      // server fault). The context decides whether the copy may reassure the
+      // participant that their answers are already safe — after the reorder
+      // above, that claim is only true once resultsSubmitted is set.
+      set({
+        phase: 'upload_failed',
+        error: undefined,
+        failure: describeFailure(err, get().resultsSubmitted ? 'upload' : 'results'),
+      });
+    } finally {
+      set({ submitting: false });
     }
   },
 
@@ -862,6 +1123,7 @@ export const useSession = create<SessionState>((set, get) => ({
   },
 
   finishWithoutRecording: async () => {
+    const { sessionId } = get();
     const dropped = get().pendingSegments;
     if (dropped.length > 0) {
       for (const seg of dropped) {
@@ -872,14 +1134,38 @@ export const useSession = create<SessionState>((set, get) => ({
       set({
         pendingSegments: [],
         lostSegments: get().lostSegments + dropped.length,
+        // Was hardcoded to 'too_large', which mislabelled every voluntary skip
+        // as a server size rejection — including the ones caused by a bad
+        // connection. The done screen and the server-side diagnostics both read
+        // this, so the wrong reason here is a wrong bug report later.
         lostSegmentReasons: [
           ...get().lostSegmentReasons,
-          ...dropped.map(() => 'too_large' as const),
+          ...dropped.map(() => 'user_skipped' as const),
         ],
       });
     }
-    set({ failure: undefined, error: undefined });
+    set({ failure: undefined, error: undefined, waitingForWifi: false });
+    // Results already in? Then there is nothing left to send — conclude here
+    // rather than re-entering finishSession, which would only find an empty
+    // segment list anyway.
+    if (get().resultsSubmitted && sessionId) {
+      await concludeSession(set, get, sessionId);
+      return;
+    }
     await get().finishSession();
+  },
+
+  uploadOverMeteredConnection: async () => {
+    set({ meteredUploadApproved: true, waitingForWifi: false });
+    await get().finishSession();
+  },
+
+  waitForWifiThenUpload: () => {
+    // Stays in `upload_metered`; UploadScreen watches connectivity and calls
+    // finishSession the moment an unmetered connection appears. Kept in the UI
+    // rather than the store so the subscription dies with the screen instead of
+    // outliving the session.
+    set({ waitingForWifi: true });
   },
 
   reset: () => {
@@ -907,6 +1193,12 @@ export const useSession = create<SessionState>((set, get) => ({
       pendingSegments: [],
       lostSegments: 0,
       lostSegmentReasons: [],
+      resultsSubmitted: false,
+      submitting: false,
+      meteredUploadApproved: false,
+      waitingForWifi: false,
+      pendingUploadBytes: undefined,
+      failure: undefined,
       interruptedFrom: undefined,
     });
   },

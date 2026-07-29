@@ -185,6 +185,15 @@ export type SessionEventType =
   | 'recording_skipped'
   /** A finished segment was lost (stop failure or missing file). */
   | 'recording_discarded'
+  /**
+   * The video upload was postponed rather than attempted — the participant is
+   * on a connection the OS calls expensive and the segment is large enough to
+   * be worth asking about. Only reachable once the results are already
+   * submitted, so nothing is at risk while it waits.
+   */
+  | 'recording_upload_deferred'
+  /** Answers, outcomes and beats are on the server and the session is finalized. */
+  | 'session_results_submitted'
   | 'session_completed';
 
 export interface SessionEvent {
