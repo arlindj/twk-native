@@ -19,10 +19,13 @@ export function ThemeToggle() {
       accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
       style={({ pressed }) => [
         styles.tile,
-        { backgroundColor: pressed ? colors.surface50 : 'transparent', borderColor: colors.line },
+        {
+          backgroundColor: pressed ? colors.surface50 : 'transparent',
+          borderColor: colors.lineStrong,
+        },
       ]}
     >
-      <Feather name={isDark ? 'sun' : 'moon'} size={20} color={colors.ink2} />
+      <Feather name={isDark ? 'sun' : 'moon'} size={20} color={colors.ink} />
     </Pressable>
   );
 }
@@ -32,7 +35,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    borderWidth: StyleSheet.hairlineWidth,
+    // 1px, not the platform hairline — same reasoning as Button's secondary
+    // outline: at hairline width the extra contrast still reads as faint.
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

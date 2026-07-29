@@ -1,5 +1,6 @@
 export { Button } from './Button';
 export { Callout } from './Callout';
+export { CircularProgress } from './CircularProgress';
 export { Card } from './Card';
 export { Divider } from './Divider';
 export { GradientTile } from './GradientTile';

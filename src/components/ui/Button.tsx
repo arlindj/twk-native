@@ -38,8 +38,12 @@ export function Button({
         variant === 'primary' && { backgroundColor: pressed ? colors.brand700 : colors.brand },
         variant === 'secondary' && {
           backgroundColor: pressed ? colors.surface50 : colors.card,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: colors.line,
+          // 1px, not the platform hairline: at hairline width `lineStrong`'s
+          // extra contrast still reads as faint on some displays. A full
+          // point keeps the outline actually visible instead of just
+          // technically more contrasty.
+          borderWidth: 1,
+          borderColor: colors.lineStrong,
         },
         variant === 'ghost' && { backgroundColor: pressed ? colors.surface50 : 'transparent' },
         variant === 'danger' && { backgroundColor: colors.dangerSoft },
