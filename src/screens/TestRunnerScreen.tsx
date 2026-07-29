@@ -50,12 +50,20 @@ export function TestRunnerScreen() {
   // behavior (leave/exit) is fine.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      const p = useSession.getState().phase;
+      const { phase: p, resultsSubmitted } = useSession.getState();
       const terminal = p === 'done' || p === 'link_error' || p === 'incompatible' || p === 'idle';
       if (terminal) return false;
+      const submitPhase = p === 'uploading' || p === 'upload_failed' || p === 'upload_metered';
       Alert.alert(
         'Leave the test?',
-        'Your progress and recording for this session will be lost.',
+        // What is actually at stake differs by phase, and telling someone their
+        // answers will be lost when they are already submitted (or the reverse)
+        // is how a participant makes the wrong call.
+        submitPhase && resultsSubmitted
+          ? 'Your answers are already submitted. Leaving now only skips the screen recording.'
+          : submitPhase
+            ? 'Your answers have not been sent yet — leaving now discards them.'
+            : 'Your progress and recording for this session will be lost.',
         [
           { text: 'Stay', style: 'cancel' },
           {
@@ -139,6 +147,7 @@ export function TestRunnerScreen() {
       return <QuestionsScreen key={`${phase}-${currentTaskIndex}`} />;
     case 'uploading':
     case 'upload_failed':
+    case 'upload_metered':
       return <UploadScreen />;
     case 'done':
       return <DoneScreen />;

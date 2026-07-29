@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sha256Hex } from '../utils/crypto';
 import { sendEventBatch } from '../api/client';
+import { retry } from '../lib/retry';
 import { SessionEvent, SessionEventType } from '../types';
 
 /**
@@ -36,6 +37,21 @@ let sessionStartMonotonic = 0;
 let recordingStartMonotonic = -1;
 let recordingSegment = -1;
 let appVersion = '1.0.0';
+let lastError: unknown = null;
+
+/**
+ * Why the last flush failed. Same reasoning as answersOutbox.lastAnswersError:
+ * the boolean return is right for the background timer, but the caller that has
+ * to explain the failure to the participant needs the cause, not just "false".
+ */
+export function lastFlushError(): unknown {
+  return lastError;
+}
+
+/** How many events are still undelivered. */
+export function pendingEventCount(): number {
+  return state?.events.length ?? 0;
+}
 
 function storageKey(sessionId: string) {
   return `${STORAGE_PREFIX}:${sessionId}`;
@@ -94,6 +110,7 @@ export async function initQueue(sessionId: string, version: string) {
   recordingSegment = -1;
   seq = 0;
   state = null;
+  lastError = null;
 
   // One-time migration off the old un-namespaced key.
   await AsyncStorage.removeItem(LEGACY_KEY).catch(() => undefined);
@@ -166,28 +183,63 @@ export async function flush(): Promise<boolean> {
       state.events = state.events.slice(batch.length);
       await persist();
     }
+    lastError = null;
     return true;
-  } catch {
+  } catch (err) {
     // Network failed — events stay queued, timer retries.
+    lastError = err;
     return false;
   } finally {
     flushing = false;
   }
 }
 
-/** Final drain at session completion. Returns true when queue is empty. */
+/**
+ * Final drain at session completion. Returns true when queue is empty.
+ *
+ * Retried with a connectivity gate, like drainAnswers: these beats are the
+ * heatmap and the path reconstruction, and a false return means the caller
+ * must keep them on disk rather than clear the queue.
+ */
 export async function drain(): Promise<boolean> {
-  const ok = await flush();
+  // Timer first, then wait out any flush it already started — `flush` returns
+  // true while another flush is in progress (right for the timer, wrong for a
+  // drain that must know whether the queue is actually empty).
   if (flushTimer) {
     clearInterval(flushTimer);
     flushTimer = null;
   }
-  return ok && (state?.events.length ?? 0) === 0;
+  await waitUntilIdle();
+
+  try {
+    return await retry(
+      async () => {
+        const sent = await flush();
+        if (!sent || (state?.events.length ?? 0) > 0) {
+          throw lastError ?? new Error('Events could not be sent.');
+        }
+        return true;
+      },
+      // Same bound as drainAnswers — the participant is watching a spinner.
+      { attempts: 5, baseDelayMs: 1200, offlineWaitMs: 25000 },
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Waits out an in-flight flush (bounded, so a wedged flush cannot hang the app). */
+async function waitUntilIdle(timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (flushing && Date.now() < deadline) {
+    await new Promise<void>((r) => setTimeout(r, 100));
+  }
 }
 
 export async function clearQueue() {
   const sessionId = state?.sessionId;
   state = null;
+  lastError = null;
   if (flushTimer) {
     clearInterval(flushTimer);
     flushTimer = null;
