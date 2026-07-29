@@ -30,10 +30,9 @@ export function GraphPlayerScreen() {
   const index = useSession((s) => s.currentTaskIndex);
   const completeTask = useSession((s) => s.completeTask);
   const { width: deviceWidth } = useWindowDimensions();
-  // Open by default so the task reads before the participant does anything;
-  // manual taps toggle it after that. Keyed by `currentTaskIndex` in
-  // TestRunnerScreen, so this remounts (and re-opens) once per task.
-  const [taskSheet, setTaskSheet] = useState(true);
+  // Sheet stays closed until FTC tap; remount per task still resets local state.
+  // Keyed by `currentTaskIndex` in TestRunnerScreen.
+  const [taskSheet, setTaskSheet] = useState(false);
   const [goalReached, setGoalReached] = useState(false);
 
   const graph = bootstrap?.prototype.graph;

@@ -251,15 +251,6 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  // Open the task sheet by default, but only once the prototype itself is on
-  // screen — not during the intro pre-screen (active=false) and not while
-  // the loading veil is still up (ready=false). Firing this any earlier
-  // would pop the sheet over a screen that isn't the prototype yet, which is
-  // confusing rather than helpful.
-  useEffect(() => {
-    if (active && ready) setTaskSheet(true);
-  }, [active, ready]);
-
   if (!bootstrap) return null;
   const task = bootstrap.tasks[index];
   if (!task) return null;
