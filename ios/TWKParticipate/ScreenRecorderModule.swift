@@ -102,19 +102,55 @@ class ScreenRecorder: NSObject {
     #endif
   }
 
+  /// Where finished segments live until the backend confirms the upload.
+  ///
+  /// This used to be `FileManager.temporaryDirectory`, which iOS purges
+  /// whenever it wants — including while the app is not running. A segment
+  /// waiting for a retry across an app restart is exactly the case that
+  /// directory does not guarantee, so a participant whose phone was low on
+  /// storage lost the video *because of where we put it*. Application
+  /// Support is durable, invisible to the user, and excluded from iCloud
+  /// backup here so a multi-megabyte session video is never uploaded to the
+  /// participant's personal backup.
+  private func recordingsDirectory() throws -> URL {
+    let fm = FileManager.default
+    let base = try fm.url(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
+    )
+    var dir = base.appendingPathComponent("TWKRecordings", isDirectory: true)
+    if !fm.fileExists(atPath: dir.path) {
+      try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+    var resourceValues = URLResourceValues()
+    resourceValues.isExcludedFromBackup = true
+    try? dir.setResourceValues(resourceValues)
+    return dir
+  }
+
   /// Removes session files left behind by a crashed/killed app. Only
   /// files older than 6h are touched — segments of the current session
   /// that are still waiting for upload must survive.
+  ///
+  /// Scans the legacy temporary directory too: a build installed over one
+  /// that wrote there can still have orphans, and nothing else would ever
+  /// collect them.
   private func cleanupStaleRecordings() {
     let fm = FileManager.default
-    let tmp = fm.temporaryDirectory
-    guard let files = try? fm.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil) else { return }
+    var directories = [fm.temporaryDirectory]
+    if let dir = try? recordingsDirectory() { directories.append(dir) }
     let cutoff = Date().timeIntervalSince1970 - 6 * 3600
-    for url in files where url.lastPathComponent.hasPrefix("twk-session-") {
-      let stamp = url.deletingPathExtension().lastPathComponent
-        .replacingOccurrences(of: "twk-session-", with: "")
-      if let epoch = Double(stamp), epoch < cutoff {
-        try? fm.removeItem(at: url)
+    for directory in directories {
+      guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      else { continue }
+      for url in files where url.lastPathComponent.hasPrefix("twk-session-") {
+        let stamp = url.deletingPathExtension().lastPathComponent
+          .replacingOccurrences(of: "twk-session-", with: "")
+        if let epoch = Double(stamp), epoch < cutoff {
+          try? fm.removeItem(at: url)
+        }
       }
     }
   }
@@ -148,8 +184,15 @@ class ScreenRecorder: NSObject {
       activateAudioSession()
     }
 
-    let url = FileManager.default.temporaryDirectory
-      .appendingPathComponent("twk-session-\(Int(Date().timeIntervalSince1970)).mp4")
+    let url: URL
+    do {
+      url = try recordingsDirectory()
+        .appendingPathComponent("twk-session-\(Int(Date().timeIntervalSince1970)).mp4")
+    } catch {
+      deactivateAudioSession()
+      reject("E_START_FAILED", "Could not prepare the video file: \(error.localizedDescription)", error)
+      return
+    }
 
     do {
       try prepareWriter(at: url, withAudio: withAudio)
