@@ -21,6 +21,14 @@ export type ColorScale = {
   line: string;
   /** Subtler border. */
   lineSoft: string;
+  /**
+   * Border for interactive controls (outlined buttons, the theme toggle).
+   * `line` is a decorative hairline (~1.2:1 contrast against `paper` by
+   * design, matching web's subtle card/divider look) — too faint to meet
+   * WCAG 1.4.11's 3:1 non-text-contrast minimum for a control boundary.
+   * This is `ink3` in both modes (verified ≥4.8:1 light / ≥7.5:1 dark).
+   */
+  lineStrong: string;
   /** Recessed well / hover row. */
   surface50: string;
   surface100: string;
@@ -62,6 +70,7 @@ export const lightColors: ColorScale = {
   ink4: '#8E96A4',
   line: '#E5E7EB',
   lineSoft: '#EEEFF2',
+  lineStrong: '#6B7280',
   surface50: '#F3F4F6',
   surface100: '#EBECF0',
   surface300: '#DCDFE4',
@@ -109,6 +118,7 @@ export const darkColors: ColorScale = {
   ink4: '#6C7689',
   line: '#252D41',
   lineSoft: '#1D2434',
+  lineStrong: '#9CA4B4',
   surface50: '#1B2232',
   surface100: '#20283C',
   surface300: '#283248',
