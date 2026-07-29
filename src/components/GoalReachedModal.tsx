@@ -34,7 +34,7 @@ export function GoalReachedModal({
         <Text style={[styles.kicker, { color: colors.brand }]}>Task {taskIndex + 1} complete</Text>
         <Text style={[styles.title, { color: colors.ink }]}>{taskTitle}</Text>
         <Text style={[styles.sub, { color: colors.ink3 }]}>
-          Nice work — the app spotted you reached the goal.
+          Nice work. The app spotted you reached the goal.
         </Text>
         <View style={{ alignSelf: 'stretch', marginTop: spacing.sm }}>
           <Button label={isLastTask ? 'Finish test' : 'Continue to next task'} onPress={onContinue} />

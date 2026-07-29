@@ -40,7 +40,7 @@ export function TaskIntroScreen() {
         <Callout icon={startsRecording ? 'video' : 'info'} style={{ marginTop: spacing.sm }}>
           <Text style={[type.caption, { color: colors.ink3 }]}>
             {startsRecording
-              ? 'Recording starts when you tap “Start task” — the system will ask for your permission first.'
+              ? 'Recording starts when you tap “Start task”. The system will ask for your permission first.'
               : 'When you’re done (or can’t continue), use the bar at the bottom of the screen.'}
           </Text>
         </Callout>

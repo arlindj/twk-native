@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -46,6 +47,7 @@ export function IntakeScreen() {
   const [role, setRole] = useState('');
   const [customRole, setCustomRole] = useState(false);
   const [busy, setBusy] = useState(false);
+  const ageInputRef = useRef<TextInput>(null);
 
   const age = useMemo(() => {
     const n = Number.parseInt(ageText.trim(), 10);
@@ -111,7 +113,11 @@ export function IntakeScreen() {
                   autoCapitalize="words"
                   autoCorrect={false}
                   style={[styles.input, inputChrome(colors, resolvedMode)]}
-                  returnKeyType="next"
+                  returnKeyType={intake.askAge ? 'next' : 'done'}
+                  onSubmitEditing={() =>
+                    intake.askAge ? ageInputRef.current?.focus() : Keyboard.dismiss()
+                  }
+                  blurOnSubmit={!intake.askAge}
                 />
               </Field>
             ) : null}
@@ -119,13 +125,15 @@ export function IntakeScreen() {
             {intake.askAge ? (
               <Field label="Age">
                 <TextInput
+                  ref={ageInputRef}
                   value={ageText}
                   onChangeText={(t) => setAgeText(t.replace(/[^0-9]/g, '').slice(0, 3))}
                   placeholder="e.g. 28"
                   placeholderTextColor={colors.ink3}
                   keyboardType="number-pad"
                   style={[styles.input, inputChrome(colors, resolvedMode)]}
-                  returnKeyType="next"
+                  returnKeyType="done"
+                  onSubmitEditing={() => Keyboard.dismiss()}
                 />
                 {ageText.length > 0 && !ageOk ? (
                   <Text style={[type.caption, { color: colors.danger }]}>
@@ -218,7 +226,7 @@ export function IntakeScreen() {
             onPress={() => void onContinue()}
           />
           <Text style={[type.caption, { color: colors.ink3, textAlign: 'center', marginTop: spacing.sm }]}>
-            Guest session — you won’t need to sign in
+            Guest session. You won’t need to sign in.
           </Text>
         </View>
       </KeyboardAvoidingView>

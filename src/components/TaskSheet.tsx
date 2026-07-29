@@ -51,7 +51,7 @@ export function TaskSheet({
           <Text style={[type.caption, { color: colors.ink3, marginBottom: spacing.md }]}>
             {hasGoal
               ? 'This task finishes on its own once you reach the goal.'
-              : 'There is no automatic finish for this task — use "I give up" if you can’t continue.'}
+              : 'There is no automatic finish for this task. Use "I give up" if you can’t continue.'}
           </Text>
           <Button label="I give up" variant="danger" onPress={onGiveUp} />
           <Button label="Continue testing" variant="ghost" onPress={onDismiss} />

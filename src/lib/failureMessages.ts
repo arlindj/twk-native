@@ -99,7 +99,7 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
         title: 'We could not submit your session',
         detail:
           'This device is no longer signed in to the study, so your session is not submitted ' +
-          'yet. Everything you did is saved here — try again, and if that fails, reopen your ' +
+          'yet. Everything you did is saved here. Try again, and if that fails, reopen your ' +
           'invite link.',
         retryable: true,
         technical,
@@ -113,11 +113,11 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
       title: 'Your session has not been submitted yet',
       detail: serverFault
         ? `The study server responded with an error (${status}). Nothing on your side is ` +
-          `wrong and everything you did is saved on this device — waiting a moment and ` +
+          `wrong and everything you did is saved on this device. Waiting a moment and ` +
           `trying again usually works.`
         : isTransient(err)
           ? 'There is no usable connection right now. Everything you did is saved on this ' +
-            'device — move somewhere with a better signal or join Wi-Fi, then try again. ' +
+            'device. Move somewhere with a better signal or join Wi-Fi, then try again. ' +
             'Please do not close the app before this finishes.'
           : 'Sending your session to the study failed. Everything you did is saved on this ' +
             'device, so trying again is safe. If it keeps failing, send this screen to the ' +
@@ -134,7 +134,7 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
       detail:
         `This recording is ${formatBytes(err.fileSizeBytes)}, which is over the size limit ` +
         `our server accepts for a single video. That usually means the test ran for a long ` +
-        `time. Your taps, answers and results were all saved — only the video is affected.`,
+        `time. Your taps, answers and results were all saved. Only the video is affected.`,
       retryable: false,
       technical,
     };
@@ -144,7 +144,7 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
     return {
       title: 'The recording file is no longer on this device',
       detail:
-        'The video was removed before it could finish uploading — usually because the ' +
+        'The video was removed before it could finish uploading, usually because the ' +
         'phone needed to free up storage. Your taps, answers and results were all saved; ' +
         'only the video is affected.',
       retryable: false,
@@ -161,7 +161,7 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
       title: 'Your test session expired',
       detail:
         'This device is no longer signed in to the study, so we could not confirm the ' +
-        'upload. Try again — if that does not help, reopening your invite link starts a ' +
+        'upload. Try again. If that does not help, reopening your invite link starts a ' +
         'fresh session.',
       // Retryable, but say so honestly: the button and the copy used to
       // disagree ("reopen your link" next to a "Try again" button), which left
@@ -189,7 +189,7 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
         title: 'The server had a problem',
         detail:
           `The study server responded with an error (${status}). Nothing on your side is ` +
-          `wrong — waiting a moment and trying again usually works.`,
+          `wrong. Waiting a moment and trying again usually works.`,
         retryable: true,
         technical,
       };
@@ -198,8 +198,8 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
       title: 'No usable connection',
       detail:
         context === 'upload'
-          ? 'The upload could not reach the server. Your recording is safe on this device — ' +
-            'move somewhere with a better signal or join Wi-Fi, then try again.'
+          ? 'The upload could not reach the server. Your recording is safe on this device. ' +
+            'Move somewhere with a better signal or join Wi-Fi, then try again.'
           : 'We could not reach the study server. Check your connection and try again.',
       retryable: true,
       technical,
@@ -224,7 +224,7 @@ export function describeFailure(err: unknown, context: FailureContext = 'upload'
     title: context === 'upload' ? 'The upload did not finish' : 'Something went wrong',
     detail:
       context === 'upload'
-        ? 'Your recording is saved on this device, so nothing is lost yet. Try again — if it ' +
+        ? 'Your recording is saved on this device, so nothing is lost yet. Try again. If it ' +
           'keeps failing, send this screen to the research team.'
         : 'Please try again. If it keeps happening, send this screen to the research team.',
     retryable: true,
@@ -284,7 +284,7 @@ export function diagnosticsNote(
     .join('; ');
   const plural = lostSegments === 1 ? 'segment' : 'segments';
   return detail
-    ? `Screen recording incomplete: ${lostSegments} ${plural} missing — ${detail}.`
+    ? `Screen recording incomplete: ${lostSegments} ${plural} missing (${detail}).`
     : `Screen recording incomplete: ${lostSegments} ${plural} missing.`;
 }
 

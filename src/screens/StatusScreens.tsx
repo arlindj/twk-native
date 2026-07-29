@@ -70,7 +70,7 @@ export function InterruptedScreen() {
         title="Test paused"
         subtitle={`You left the app, so the test was paused${
           recordingEnabled
-            ? ' and the screen recording was stopped — nothing outside this app is ever recorded'
+            ? ' and the screen recording was stopped. Nothing outside this app is ever recorded'
             : ''
         }.`}
       />

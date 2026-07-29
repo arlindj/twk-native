@@ -74,7 +74,7 @@ export function QuestionRenderer({
       // isAnswered() treat it as answered so the participant is never stuck.
       return (
         <Text style={[type.caption, { color: colors.ink3 }]}>
-          This question isn’t supported by this app version — tap Next to continue.
+          This question isn’t supported by this app version. Tap Next to continue.
         </Text>
       );
   }

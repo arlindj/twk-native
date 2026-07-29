@@ -85,7 +85,7 @@ export function UploadScreen() {
           <PageHeader
             icon="wifi"
             title="Waiting for Wi-Fi"
-            subtitle={`Your answers are already submitted. The ${size} screen recording will send by itself as soon as you are on Wi-Fi — keep the app open.`}
+            subtitle={`Your answers are already submitted. The ${size} screen recording will send by itself as soon as you are on Wi-Fi. Keep the app open.`}
           />
           <View style={styles.spinnerRow}>
             <ActivityIndicator color={colors.brand} />
@@ -120,7 +120,7 @@ export function UploadScreen() {
         <PageHeader
           icon="upload-cloud"
           title="Send the recording over mobile data?"
-          subtitle={`Your answers are already submitted. The screen recording is ${size}, and you are on a mobile connection — sending it now will use your data allowance.`}
+          subtitle={`Your answers are already submitted. The screen recording is ${size}, and you are on a mobile connection. Sending it now will use your data allowance.`}
         />
         <Callout icon="check-circle">
           <Text style={[type.caption, { color: colors.ink }]}>
@@ -143,7 +143,7 @@ export function UploadScreen() {
     // so an older persisted snapshot still shows something useful.
     const title = failure?.title ?? 'Upload didn’t finish';
     const detail =
-      failure?.detail ?? error ?? 'Your recording is saved safely on this device — nothing is lost.';
+      failure?.detail ?? error ?? 'Your recording is saved safely on this device. Nothing is lost.';
     // "Finish without the video" is only an honest offer once the results are
     // in. Before that, skipping would discard the participant's answers, so the
     // single option is to keep trying.
@@ -175,28 +175,18 @@ export function UploadScreen() {
         }
       >
         <PageHeader icon="upload-cloud" title={title} subtitle={detail} />
-        {resultsSubmitted ? (
-          <Callout icon="check-circle">
-            <Text style={[type.caption, { color: colors.ink }]}>
-              Your answers, task results and taps are already submitted. Only the screen recording
-              is still waiting.
-            </Text>
-          </Callout>
-        ) : (
-          <Callout icon="alert-triangle" tone="warning">
-            <Text style={[type.caption, { color: colors.ink }]}>
-              Your session has not reached the study yet. Everything you did is saved on this
-              phone — please keep the app installed and try again.
-            </Text>
-          </Callout>
-        )}
-        {failure?.technical ? (
-          <Callout icon="info">
-            <Text style={[type.caption, { color: colors.ink3 }]}>
+        <Callout icon={resultsSubmitted ? 'check-circle' : 'alert-triangle'} tone={resultsSubmitted ? 'default' : 'warning'}>
+          <Text style={[type.caption, { color: colors.ink }]}>
+            {resultsSubmitted
+              ? 'Your answers, task results and taps are already submitted. Only the screen recording is still waiting.'
+              : 'Your session has not reached the study yet. Everything you did is saved on this phone. Please keep the app installed and try again.'}
+          </Text>
+          {failure?.technical ? (
+            <Text style={[type.caption, { color: colors.ink3, marginTop: spacing.sm }]}>
               Details for the research team: {failure.technical}
             </Text>
-          </Callout>
-        ) : null}
+          ) : null}
+        </Callout>
       </Screen>
     );
   }
@@ -214,7 +204,7 @@ export function UploadScreen() {
         : progress?.state === 'finalizing'
           ? 'Finalizing…'
           : progress?.state === 'failed_retryable'
-            ? 'Connection lost — retrying…'
+            ? 'Connection lost. Retrying…'
             : 'Wrapping up your session…';
 
   // A spinner alone made 5% and 95% look identical, so giving up on a nearly

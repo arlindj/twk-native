@@ -74,7 +74,7 @@ export function ConsentScreen() {
         <ListRow
           icon="smartphone"
           title="Device info"
-          body="Platform, OS version and screen size — used to make sense of the results."
+          body="Platform, OS version and screen size, used to make sense of the results."
           last
         />
 
@@ -85,7 +85,7 @@ export function ConsentScreen() {
 
       <View style={[styles.footer, { borderTopColor: colors.line }]}>
         <Button
-          label="I agree — continue"
+          label="I agree and continue"
           loading={busy}
           onPress={async () => {
             setBusy(true);

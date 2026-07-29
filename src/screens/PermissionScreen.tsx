@@ -56,7 +56,7 @@ export function PermissionScreen() {
           icon="video"
           title="Screen recording"
           onBack={back}
-          subtitle={`This study records your screen — but only while you’re doing the tasks. ${
+          subtitle={`This study records your screen, but only while you’re doing the tasks. ${
             Platform.OS === 'ios'
               ? 'iOS will ask for your permission when the first task starts.'
               : 'Android will show a system dialog asking you to allow screen capture when the first task starts.'
@@ -72,14 +72,14 @@ export function PermissionScreen() {
         <ListRow
           icon="log-out"
           title="Stops if you leave"
-          body="Leaving the app stops the recording immediately — other apps are never captured."
+          body="Leaving the app stops the recording immediately. Other apps are never captured."
           last={!audioRecordingConsent}
         />
         {audioRecordingConsent ? (
           <ListRow
             icon="mic"
             title="Microphone"
-            body="Your voice is recorded together with the screen while you do the tasks — you’ll be asked to allow the microphone."
+            body="Your voice is recorded together with the screen while you do the tasks. You’ll be asked to allow the microphone."
             last
           />
         ) : null}
@@ -92,7 +92,7 @@ export function PermissionScreen() {
             <Text style={[type.body, { color: colors.danger, marginTop: 2 }]}>
               {unavailable
                 ? 'Screen recording isn’t available on this device or environment (e.g. simulator). The test needs a real phone to record.'
-                : 'This study requires screen recording, so the test can’t continue without it. Tap “Try again” — the system dialog will appear again when the task starts.'}
+                : 'This study requires screen recording, so the test can’t continue without it. Tap “Try again”. The system dialog will appear again when the task starts.'}
             </Text>
           </Callout>
         )}

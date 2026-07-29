@@ -54,7 +54,7 @@ export function ScanScreen() {
           <Text style={[type.h2, { color: colors.ink, marginBottom: spacing.sm }]}>Camera access</Text>
           <Text style={[type.body, { color: colors.ink3, marginBottom: spacing.lg }]}>
             {blocked
-              ? 'Camera access is blocked for this app. Enable it in Settings, or go back and paste the test link manually — scanning is optional.'
+              ? 'Camera access is blocked for this app. Enable it in Settings, or go back and paste the test link manually. Scanning is optional.'
               : 'The camera is only used to scan your test QR code. Nothing is photographed or stored. You can also paste the test link manually instead.'}
           </Text>
           {blocked ? (

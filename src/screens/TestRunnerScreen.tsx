@@ -62,7 +62,7 @@ export function TestRunnerScreen() {
         submitPhase && resultsSubmitted
           ? 'Your answers are already submitted. Leaving now only skips the screen recording.'
           : submitPhase
-            ? 'Your answers have not been sent yet — leaving now discards them.'
+            ? 'Your answers have not been sent yet. Leaving now discards them.'
             : 'Your progress and recording for this session will be lost.',
         [
           { text: 'Stay', style: 'cancel' },
