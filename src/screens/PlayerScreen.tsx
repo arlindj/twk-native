@@ -1,15 +1,18 @@
 import { useKeepAwake } from '../native/keepAwake';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Dimensions, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { captureRef } from 'react-native-view-shot';
 import { WebView } from 'react-native-webview';
 import { uploadFrame } from '../api/client';
 import { TapOverlay } from '../components/TapOverlay';
 import { Button } from '../components/ui';
+import { FloatingTaskControl } from '../components/FloatingTaskControl';
+import { TaskSheet } from '../components/TaskSheet';
+import { GoalReachedModal } from '../components/GoalReachedModal';
 import { sessionElapsedMs, track } from '../events/eventQueue';
 import { useSession } from '../state/sessionStore';
-import { radius, spacing, type, useTheme } from '../theme';
+import { spacing, type, useTheme } from '../theme';
 
 /**
  * Injected into the prototype WebView. Reports which prototype screen is
@@ -109,7 +112,7 @@ true;
  */
 export function PlayerScreen({ active = true }: { active?: boolean }) {
   useKeepAwake();
-  const { colors, resolvedMode } = useTheme();
+  const { colors } = useTheme();
   const bootstrap = useSession((s) => s.bootstrap);
   const sessionId = useSession((s) => s.sessionId);
   const index = useSession((s) => s.currentTaskIndex);
@@ -248,6 +251,15 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
+  // Open the task sheet by default, but only once the prototype itself is on
+  // screen — not during the intro pre-screen (active=false) and not while
+  // the loading veil is still up (ready=false). Firing this any earlier
+  // would pop the sheet over a screen that isn't the prototype yet, which is
+  // confusing rather than helpful.
+  useEffect(() => {
+    if (active && ready) setTaskSheet(true);
+  }, [active, ready]);
+
   if (!bootstrap) return null;
   const task = bootstrap.tasks[index];
   if (!task) return null;
@@ -364,93 +376,28 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
         )}
       </TapOverlay>
 
-      {/* Floating task bar — always dark chrome regardless of theme (like the
-          web app's device-bezel exception): it overlays arbitrary prototype
-          content, which can itself be light or dark, so it needs its own
-          fixed contrast rather than following the app's ink token.
-          Hidden while preloading: TaskIntroScreen is drawn over this whole
-          screen then, and a second task bar bleeding through would be wrong. */}
-      <View style={[styles.bar, !active && styles.hidden]} pointerEvents={active ? 'auto' : 'none'}>
-        <Pressable style={styles.barTask} onPress={() => setTaskSheet(true)}>
-          <View style={styles.barDot} />
-          <Text numberOfLines={1} style={styles.barText}>
-            {task.title}
-          </Text>
-        </Pressable>
-        <Pressable style={[styles.barDone, { backgroundColor: colors.brand }]} onPress={() => setTaskSheet(true)}>
-          <Text style={styles.barDoneText}>{hasGoal ? 'Stuck?' : 'Done?'}</Text>
-        </Pressable>
-      </View>
+      <FloatingTaskControl taskTitle={task.title} onPress={() => setTaskSheet(true)} active={active && ready} />
 
-      {/* Task sheet */}
-      <Modal visible={active && taskSheet} transparent animationType="slide" onRequestClose={() => setTaskSheet(false)}>
-        <Pressable style={[styles.sheetBackdrop, { backgroundColor: colors.overlay }]} onPress={() => setTaskSheet(false)} />
-        <View
-          style={[
-            styles.sheet,
-            { backgroundColor: colors.card, borderColor: colors.line },
-            resolvedMode === 'light' && styles.sheetShadow,
-          ]}
-        >
-          <View style={[styles.sheetHandle, { backgroundColor: colors.line }]} />
-          <Text style={[type.h3, { color: colors.ink }]}>Task {index + 1}</Text>
-          <Text style={[type.h2, { color: colors.ink, marginTop: 4 }]}>{task.title}</Text>
-          <Text style={[type.body, { color: colors.ink3, marginTop: spacing.sm }]}>{task.instruction}</Text>
-          <View style={{ marginTop: spacing.lg }}>
-            {hasGoal ? (
-              <Text style={[type.caption, { color: colors.ink3, marginBottom: spacing.md }]}>
-                This task finishes on its own once you reach the goal. Only use the
-                button below if you can’t get there.
-              </Text>
-            ) : (
-              <Button
-                label="I completed the task"
-                onPress={() => {
-                  setTaskSheet(false);
-                  completeTask('completed');
-                }}
-              />
-            )}
-            <Button
-              label="I give up"
-              variant="danger"
-              onPress={() => {
-                setTaskSheet(false);
-                completeTask('abandoned');
-              }}
-            />
-            <Button label="Continue testing" variant="ghost" onPress={() => setTaskSheet(false)} />
-          </View>
-        </View>
-      </Modal>
+      <TaskSheet
+        visible={active && ready && taskSheet}
+        taskIndex={index}
+        title={task.title}
+        instruction={task.instruction}
+        hasGoal={hasGoal}
+        onGiveUp={() => {
+          setTaskSheet(false);
+          completeTask('abandoned');
+        }}
+        onDismiss={() => setTaskSheet(false)}
+      />
 
-      {/* Auto-complete modal — the app recognized the goal screen itself, so
-          the participant only picks the next step (never "I completed it"). */}
       {active && goalReached ? (
-        <View style={[styles.goalOverlay, { backgroundColor: colors.overlay }]}>
-          <View
-            style={[
-              styles.goalCard,
-              { backgroundColor: colors.card, borderColor: colors.line },
-              resolvedMode === 'light' && styles.goalCardShadow,
-            ]}
-          >
-            <View style={[styles.goalCheck, { backgroundColor: colors.brand }]}>
-              <Text style={[styles.goalCheckMark, { color: colors.onBrand }]}>✓</Text>
-            </View>
-            <Text style={[styles.goalKicker, { color: colors.brand }]}>Task {index + 1} complete</Text>
-            <Text style={[styles.goalTitle, { color: colors.ink }]}>{task.title}</Text>
-            <Text style={[styles.goalSub, { color: colors.ink3 }]}>Nice work — the app spotted you reached the goal.</Text>
-            <View style={{ alignSelf: 'stretch', marginTop: spacing.sm }}>
-              <Button
-                label={
-                  index === bootstrap.tasks.length - 1 ? 'Finish test' : 'Continue to next task'
-                }
-                onPress={() => void completeTask('completed')}
-              />
-            </View>
-          </View>
-        </View>
+        <GoalReachedModal
+          taskIndex={index}
+          taskTitle={task.title}
+          isLastTask={index === bootstrap.tasks.length - 1}
+          onContinue={() => void completeTask('completed')}
+        />
       ) : null}
     </SafeAreaView>
   );
@@ -458,7 +405,6 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  hidden: { opacity: 0 },
   veil: {
     position: 'absolute',
     top: 0,
@@ -475,93 +421,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.xl,
   },
-  bar: {
-    position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    bottom: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A1A1A',
-    borderRadius: radius.pill,
-    paddingVertical: 10,
-    paddingHorizontal: spacing.md,
-    gap: spacing.sm,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  barTask: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  barDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FF5A5A' },
-  barText: { color: '#fff', fontSize: 14, fontWeight: '600', flex: 1 },
-  barDone: {
-    borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  barDoneText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  sheetBackdrop: { flex: 1 },
-  sheet: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    borderTopWidth: 1,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-  },
-  sheetShadow: {
-    shadowColor: '#0F1729',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  sheetHandle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    marginBottom: spacing.md,
-  },
-  goalOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  goalCard: {
-    alignItems: 'center',
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.xl * 1.5,
-    gap: spacing.md,
-  },
-  goalCardShadow: {
-    shadowColor: '#0F1729',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  goalCheck: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  goalCheckMark: { fontSize: 34, fontWeight: '800' },
-  goalKicker: {
-    fontSize: 13,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  goalTitle: { ...type.h2, textAlign: 'center' },
-  goalSub: { ...type.caption, textAlign: 'center' },
 });
