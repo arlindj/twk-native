@@ -41,6 +41,10 @@ yarn-error.*
 # Local env
 .env*.local
 
+# Local agent handoff (not for remote)
+project_context.md
+project_context.*.md
+
 # Dev server artifacts
 server/uploads/
 

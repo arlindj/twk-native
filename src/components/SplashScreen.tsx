@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text } from 'react-native';
 import { TwkLogoMark } from './ui/TwkLogoMark';
-import { spacing, useTheme } from '../theme';
+import { spacing } from '../theme';
 
 /**
  * Animated splash shown on cold start, over a plain canvas that matches
@@ -9,10 +9,13 @@ import { spacing, useTheme } from '../theme';
  * scales + fades in, the wordmark follows, a short hold, then the whole
  * overlay fades out and calls onFinish.
  *
+ * Canvas is fixed dark (`#0B111E`) — same as iOS/Android launch screens —
+ * so the multi-tone logo mark stays readable (mid-green leaf no longer
+ * vanishes into a brand-green plate).
+ *
  * Uses only the built-in Animated API — no extra dependency.
  */
 export function SplashScreen({ onFinish }: { onFinish: () => void }) {
-  const { colors } = useTheme();
   const markScale = useRef(new Animated.Value(0.8)).current;
   const markOpacity = useRef(new Animated.Value(0)).current;
   const wordOpacity = useRef(new Animated.Value(0)).current;
@@ -54,7 +57,7 @@ export function SplashScreen({ onFinish }: { onFinish: () => void }) {
 
   return (
     <Animated.View
-      style={[styles.overlay, { backgroundColor: colors.paper, opacity: overlayOpacity }]}
+      style={[styles.overlay, { backgroundColor: LAUNCH_BG, opacity: overlayOpacity }]}
       pointerEvents="none"
     >
       <Animated.View
@@ -62,12 +65,16 @@ export function SplashScreen({ onFinish }: { onFinish: () => void }) {
       >
         <TwkLogoMark size={72} />
       </Animated.View>
-      <Animated.Text style={[styles.word, { color: colors.ink, opacity: wordOpacity }]}>
+      <Animated.Text style={[styles.word, { color: LAUNCH_INK, opacity: wordOpacity }]}>
         TWK Participate
       </Animated.Text>
     </Animated.View>
   );
 }
+
+/** Match native SplashScreenBackground / splashscreen_background. */
+const LAUNCH_BG = '#0B111E';
+const LAUNCH_INK = '#F3F5F7';
 
 const styles = StyleSheet.create({
   overlay: {
