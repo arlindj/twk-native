@@ -200,7 +200,7 @@ function OpinionScale({
   // numbers rather than inventing intermediate faces.
   const useEmoji = !!emoji && steps.length === SCALE_EMOJIS.length;
   return (
-    <View>
+    <View style={styles.scaleContainer}>
       <View style={styles.scaleRow}>
         {steps.map((s, i) => {
           const active = value === s;
@@ -208,6 +208,9 @@ function OpinionScale({
             <Pressable
               key={s}
               onPress={() => onChange(s)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={`${s}${i === 0 && minLabel ? `, ${minLabel}` : ''}${i === steps.length - 1 && maxLabel ? `, ${maxLabel}` : ''}`}
               style={[
                 styles.scaleItem,
                 { borderColor: colors.line, backgroundColor: colors.card },
@@ -218,6 +221,7 @@ function OpinionScale({
                 style={[
                   styles.scaleText,
                   { color: colors.ink },
+                  useEmoji && styles.scaleEmoji,
                   !useEmoji && active && { color: colors.onBrand },
                 ]}
               >
@@ -228,9 +232,24 @@ function OpinionScale({
         })}
       </View>
       {(minLabel || maxLabel) && (
-        <View style={styles.scaleLabels}>
-          <Text style={[type.caption, { color: colors.ink3 }]}>{minLabel ?? ''}</Text>
-          <Text style={[type.caption, { color: colors.ink3 }]}>{maxLabel ?? ''}</Text>
+        <View style={styles.scaleLabelsRow}>
+          {minLabel ? (
+            <Text style={[type.caption, styles.scaleEdgeLabel, { color: colors.ink3 }]}>{minLabel}</Text>
+          ) : (
+            <View />
+          )}
+          {maxLabel ? (
+            <Text
+              style={[
+                type.caption,
+                styles.scaleEdgeLabel,
+                styles.scaleEdgeLabelEnd,
+                { color: colors.ink3 },
+              ]}
+            >
+              {maxLabel}
+            </Text>
+          ) : null}
         </View>
       )}
     </View>
@@ -425,21 +444,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: spacing.md,
   },
-  scaleRow: { flexDirection: 'row', gap: spacing.xs },
+  scaleContainer: { width: '100%' },
+  scaleRow: { flexDirection: 'row', gap: spacing.xs, width: '100%' },
   scaleItem: {
     flex: 1,
-    aspectRatio: 0.9,
+    minHeight: 48,
     borderRadius: radius.sm,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   scaleText: { fontSize: 16, fontWeight: '600' },
-  scaleLabels: {
+  scaleEmoji: { fontSize: 22, lineHeight: 28 },
+  scaleLabelsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginTop: spacing.sm,
+    gap: spacing.md,
+    width: '100%',
   },
+  scaleEdgeLabel: { flex: 1, maxWidth: '46%' },
+  scaleEdgeLabelEnd: { textAlign: 'right' },
   choice: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -33,6 +33,7 @@ export function GraphPlayerScreen() {
   // Sheet stays closed until FTC tap; remount per task still resets local state.
   // Keyed by `currentTaskIndex` in TestRunnerScreen.
   const [taskSheet, setTaskSheet] = useState(false);
+  const [screenTapTick, setScreenTapTick] = useState(0);
   const [goalReached, setGoalReached] = useState(false);
 
   const graph = bootstrap?.prototype.graph;
@@ -88,7 +89,13 @@ export function GraphPlayerScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]} edges={['top', 'bottom']}>
-      <View style={{ flex: 1 }}>
+      <View
+        style={{ flex: 1 }}
+        onStartShouldSetResponderCapture={() => {
+          setScreenTapTick((t) => t + 1);
+          return false;
+        }}
+      >
         {screen?.imageUrl ? (
           <View style={{ width: layoutWidth, height: layoutHeight }}>
             <Image
@@ -117,7 +124,15 @@ export function GraphPlayerScreen() {
         )}
       </View>
 
-      <FloatingTaskControl taskTitle={task.title} onPress={() => setTaskSheet(true)} active />
+      <FloatingTaskControl
+        taskIndex={index}
+        taskTotal={bootstrap.tasks.length}
+        taskTitle={task.title}
+        onPress={() => setTaskSheet(true)}
+        active
+        screenTapTick={screenTapTick}
+        sheetOpen={taskSheet}
+      />
 
       <TaskSheet
         visible={taskSheet}

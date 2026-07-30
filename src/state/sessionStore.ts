@@ -223,6 +223,11 @@ interface SessionSnapshot {
    * after a slow upload would inflate the participant's measured time-on-task.
    */
   resultsSubmitted: boolean;
+  /** Real data captured at snapshot time, for the resume screen — never inferred. */
+  studyName: string;
+  totalTasks: number;
+  /** Epoch ms — lets the resume screen say "last active X ago" without guessing. */
+  updatedAt: number;
 }
 
 /** Phases worth resuming after a cold kill. */
@@ -487,12 +492,17 @@ async function readSnapshot(): Promise<SessionSnapshot | null> {
   }
 }
 
-/** What an unfinished session left behind, for the welcome screen's resume offer. */
+/** What an unfinished session left behind, for the dedicated resume screen. */
 export interface ResumableSession {
   testToken: string;
   phase: Phase;
   /** True when only the screen recording is still outstanding. */
   resultsSubmitted: boolean;
+  /** Real fields captured when the snapshot was written — nothing here is guessed. */
+  studyName: string;
+  currentTaskIndex: number;
+  totalTasks: number;
+  updatedAt: number;
 }
 
 /**
@@ -501,7 +511,8 @@ export interface ResumableSession {
  * Recovery used to be reachable only by re-opening the invite deep link or
  * re-typing the code: a participant whose app was killed mid-upload landed on
  * the welcome screen with no sign that anything was pending, and the session sat
- * unfinalized on the server. The welcome screen can now offer to continue it.
+ * unfinalized on the server. A dedicated screen (shown before Home, not mixed
+ * into it) can now offer to continue it.
  */
 export async function findResumableSession(): Promise<ResumableSession | null> {
   const snap = await readSnapshot();
@@ -510,7 +521,17 @@ export async function findResumableSession(): Promise<ResumableSession | null> {
     testToken: snap.testToken,
     phase: snap.phase,
     resultsSubmitted: snap.resultsSubmitted ?? false,
+    studyName: snap.studyName ?? '',
+    currentTaskIndex: snap.currentTaskIndex ?? 0,
+    totalTasks: snap.totalTasks ?? 0,
+    updatedAt: snap.updatedAt ?? 0,
   };
+}
+
+/** Discards a pending resumable session without touching the server — the
+ *  participant chose to start fresh instead of continuing it. */
+export function dismissResumableSession() {
+  clearSnapshot();
 }
 
 function snapshotOf(s: SessionState): SessionSnapshot | null {
@@ -529,6 +550,9 @@ function snapshotOf(s: SessionState): SessionSnapshot | null {
     lostSegments: s.lostSegments,
     lostSegmentReasons: s.lostSegmentReasons,
     resultsSubmitted: s.resultsSubmitted,
+    studyName: s.bootstrap?.studyName ?? '',
+    totalTasks: s.bootstrap?.tasks.length ?? 0,
+    updatedAt: Date.now(),
   };
 }
 

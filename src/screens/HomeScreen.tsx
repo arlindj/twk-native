@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, GradientTile, ThemeToggle } from '../components/ui';
+import { Button, GradientTile, ThemeToggle, TwkLogoMark } from '../components/ui';
 import { parseTestLink } from '../linkParser';
 import { Nav } from '../navigation';
 import { inputChrome, radius, spacing, type, useTheme } from '../theme';
@@ -57,9 +57,7 @@ export function HomeScreen() {
         style={{ flex: 1 }}
       >
         <View style={styles.brandRow}>
-          <View style={[styles.logo, { backgroundColor: colors.brand }]}>
-            <Text style={[styles.logoText, { color: colors.onBrand }]}>T</Text>
-          </View>
+          <TwkLogoMark size={32} />
           <Text style={[styles.brandName, { color: colors.ink }]}>TWK Participate</Text>
           <View style={{ flex: 1 }} />
           <ThemeToggle />
@@ -144,14 +142,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.md,
   },
-  logo: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: { fontSize: 18, fontWeight: '800' },
   brandName: { fontSize: 16, fontWeight: '700' },
 
   hero: {

@@ -8,6 +8,7 @@ import { createNavigationContainerRef } from '@react-navigation/native';
  */
 export type RootStackParamList = {
   Home: undefined;
+  Resume: undefined;
   Scan: undefined;
   TestRunner: { token: string; api?: string };
 };

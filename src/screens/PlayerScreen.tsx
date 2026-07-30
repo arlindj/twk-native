@@ -11,6 +11,7 @@ import { FloatingTaskControl } from '../components/FloatingTaskControl';
 import { TaskSheet } from '../components/TaskSheet';
 import { GoalReachedModal } from '../components/GoalReachedModal';
 import { sessionElapsedMs, track } from '../events/eventQueue';
+import { shouldExcludeTapFromHeatmap } from '../lib/studyChrome';
 import { useSession } from '../state/sessionStore';
 import { spacing, type, useTheme } from '../theme';
 
@@ -118,6 +119,7 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
   const index = useSession((s) => s.currentTaskIndex);
   const completeTask = useSession((s) => s.completeTask);
   const [taskSheet, setTaskSheet] = useState(false);
+  const [screenTapTick, setScreenTapTick] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [goalReached, setGoalReached] = useState(false);
   // Drives the loading veil. Without it the participant stares at the
@@ -234,6 +236,7 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
 
   /** Debounced: capture ~900ms after the last tap so transitions settle. */
   const scheduleCapture = () => {
+    setScreenTapTick((t) => t + 1);
     if (!isFrameCaptured || !activeRef.current) return;
     if (captureTimer.current) clearTimeout(captureTimer.current);
     captureTimer.current = setTimeout(() => void doCapture(), 900);
@@ -250,6 +253,11 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
     // doCapture reads everything it needs through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  useEffect(() => {
+    setTaskSheet(false);
+    setScreenTapTick(0);
+  }, [index]);
 
   if (!bootstrap) return null;
   const task = bootstrap.tasks[index];
@@ -323,17 +331,22 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
               if (msg.kind === 'screen' && msg.screenId) {
                 onScreenChange(msg.screenId, 'webview');
               } else if (msg.kind === 'tap' && msg.nx !== undefined && msg.ny !== undefined) {
-                track('tap', {
+                const tapPayload = {
                   taskId: task.id,
                   normalizedX: Number(msg.nx.toFixed(4)),
                   normalizedY: Number(msg.ny.toFixed(4)),
+                  screenWidth: Math.round(Dimensions.get('window').width),
+                  screenHeight: Math.round(Dimensions.get('window').height),
                   meta: {
                     source: 'webview',
                     prototypeScreenId: msg.screenId ?? currentScreenId.current,
                     interactive: !!msg.interactive,
                     missionIndex: index,
                   },
-                });
+                };
+                if (!shouldExcludeTapFromHeatmap(tapPayload)) {
+                  track('tap', tapPayload);
+                }
               }
             }}
             onError={() => setLoadError(true)}
@@ -367,7 +380,15 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
         )}
       </TapOverlay>
 
-      <FloatingTaskControl taskTitle={task.title} onPress={() => setTaskSheet(true)} active={active && ready} />
+      <FloatingTaskControl
+        taskIndex={index}
+        taskTotal={bootstrap.tasks.length}
+        taskTitle={task.title}
+        onPress={() => setTaskSheet(true)}
+        active={active && ready}
+        screenTapTick={screenTapTick}
+        sheetOpen={taskSheet}
+      />
 
       <TaskSheet
         visible={active && ready && taskSheet}

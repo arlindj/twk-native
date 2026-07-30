@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { Dimensions, GestureResponderEvent, PixelRatio, View } from 'react-native';
+import { shouldExcludeTapFromHeatmap } from '../lib/studyChrome';
 import { track } from '../events/eventQueue';
 
 /**
@@ -38,7 +39,7 @@ export function TapOverlay({
       const { width, height } = Dimensions.get('window');
       const prototypeScreenId = getPrototypeScreenId?.();
       onTap?.();
-      track('tap', {
+      const tapPayload = {
         taskId,
         x: Math.round(pageX),
         y: Math.round(pageY),
@@ -49,7 +50,11 @@ export function TapOverlay({
         pixelRatio: PixelRatio.get(),
         orientation: width > height ? 'landscape' : 'portrait',
         meta: { source: 'native', ...(prototypeScreenId ? { prototypeScreenId } : {}) },
-      });
+      } as const;
+      if (!shouldExcludeTapFromHeatmap(tapPayload)) {
+        onTap?.();
+        track('tap', tapPayload);
+      }
       return false; // never claim the touch — the prototype must receive it
     },
     [enabled, taskId, getPrototypeScreenId, onTap],

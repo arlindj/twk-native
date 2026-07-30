@@ -4,7 +4,7 @@ import { Button } from './ui';
 import { radius, spacing, type, useTheme } from '../theme';
 
 /**
- * The task sheet, opened from `FloatingTaskControl`.
+ * The task sheet, opened by tapping `FloatingTaskControl`.
  *
  * No "I completed the task" button: the app detects the goal screen itself
  * and shows `GoalReachedModal` automatically (see PlayerScreen/

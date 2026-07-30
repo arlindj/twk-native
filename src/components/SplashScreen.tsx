@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text } from 'react-native';
+import { TwkLogoMark } from './ui/TwkLogoMark';
 import { spacing, useTheme } from '../theme';
 
 /**
@@ -57,12 +58,9 @@ export function SplashScreen({ onFinish }: { onFinish: () => void }) {
       pointerEvents="none"
     >
       <Animated.View
-        style={[
-          styles.mark,
-          { backgroundColor: colors.brand, opacity: markOpacity, transform: [{ scale: markScale }] },
-        ]}
+        style={{ opacity: markOpacity, transform: [{ scale: markScale }] }}
       >
-        <Text style={[styles.markText, { color: colors.onBrand }]}>T</Text>
+        <TwkLogoMark size={72} />
       </Animated.View>
       <Animated.Text style={[styles.word, { color: colors.ink, opacity: wordOpacity }]}>
         TWK Participate
@@ -81,14 +79,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  mark: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  markText: { fontSize: 38, fontWeight: '800' },
   word: {
     marginTop: spacing.md,
     fontSize: 17,

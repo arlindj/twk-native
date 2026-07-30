@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  Keyboard,
+  InputAccessoryView,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -29,6 +29,9 @@ const DEFAULT_ROLE_OPTIONS = [
   'Regular user',
 ];
 
+/** Suppresses iOS's default "Done" toolbar above the number pad. */
+const IOS_BLANK_ACCESSORY_ID = 'intake-blank-accessory';
+
 /**
  * Guest intake — no login. Tester self-reports name, age, and role so the
  * web dashboard can attach results to user personas. Fields shown come from
@@ -47,7 +50,6 @@ export function IntakeScreen() {
   const [role, setRole] = useState('');
   const [customRole, setCustomRole] = useState(false);
   const [busy, setBusy] = useState(false);
-  const ageInputRef = useRef<TextInput>(null);
 
   const age = useMemo(() => {
     const n = Number.parseInt(ageText.trim(), 10);
@@ -81,6 +83,11 @@ export function IntakeScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]}>
+      {Platform.OS === 'ios' ? (
+        <InputAccessoryView nativeID={IOS_BLANK_ACCESSORY_ID}>
+          <View style={styles.blankAccessory} />
+        </InputAccessoryView>
+      ) : null}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
@@ -88,9 +95,6 @@ export function IntakeScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
-          // Keeps the focused input above the keyboard; drag dismisses the
-          // number-pad (which has no return key) so the role chips + footer
-          // stay reachable.
           automaticallyAdjustKeyboardInsets
           keyboardDismissMode="on-drag"
         >
@@ -113,11 +117,6 @@ export function IntakeScreen() {
                   autoCapitalize="words"
                   autoCorrect={false}
                   style={[styles.input, inputChrome(colors, resolvedMode)]}
-                  returnKeyType={intake.askAge ? 'next' : 'done'}
-                  onSubmitEditing={() =>
-                    intake.askAge ? ageInputRef.current?.focus() : Keyboard.dismiss()
-                  }
-                  blurOnSubmit={!intake.askAge}
                 />
               </Field>
             ) : null}
@@ -125,15 +124,13 @@ export function IntakeScreen() {
             {intake.askAge ? (
               <Field label="Age">
                 <TextInput
-                  ref={ageInputRef}
                   value={ageText}
                   onChangeText={(t) => setAgeText(t.replace(/[^0-9]/g, '').slice(0, 3))}
                   placeholder="e.g. 28"
                   placeholderTextColor={colors.ink3}
                   keyboardType="number-pad"
+                  inputAccessoryViewID={Platform.OS === 'ios' ? IOS_BLANK_ACCESSORY_ID : undefined}
                   style={[styles.input, inputChrome(colors, resolvedMode)]}
-                  returnKeyType="done"
-                  onSubmitEditing={() => Keyboard.dismiss()}
                 />
                 {ageText.length > 0 && !ageOk ? (
                   <Text style={[type.caption, { color: colors.danger }]}>
@@ -209,8 +206,6 @@ export function IntakeScreen() {
                       inputChrome(colors, resolvedMode),
                       { marginTop: spacing.sm },
                     ]}
-                    returnKeyType="done"
-                    onSubmitEditing={() => void onContinue()}
                   />
                 ) : null}
               </Field>
@@ -281,4 +276,5 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   chipText: { fontSize: 14, fontWeight: '500' },
+  blankAccessory: { height: 0 },
 });

@@ -23,6 +23,7 @@ import {
   StartSessionResponse,
   TaskConfig,
 } from '../types';
+import { shouldExcludeTapFromHeatmap } from '../lib/studyChrome';
 
 /**
  * Session Client — the only door to the backend. Talks directly to the
@@ -378,6 +379,7 @@ function toBeat(e: SessionEvent): Record<string, unknown> | null {
   // web embed remount), so the server's t_ms-drop heuristic can't split them.
   const mi = typeof e.meta?.missionIndex === 'number' ? e.meta.missionIndex : undefined;
   if (e.type === 'tap') {
+    if (shouldExcludeTapFromHeatmap(e)) return null;
     const rawScreen = typeof e.meta?.prototypeScreenId === 'string' ? e.meta.prototypeScreenId : '';
     // 'entry' is the placeholder id before the bridge reports the first real
     // prototype screen — don't tag clicks with it (keeps it out of analytics).
