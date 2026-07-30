@@ -158,9 +158,10 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
    * Single choke point for every prototype screen change, from either
    * signal source: the WebView hash bridge (DOM/hosted prototypes) or a
    * server-clustered frame `screenKey` (canvas prototypes). Records the
-   * navigation and, when the screen is the current task's declared goal,
-   * auto-completes the task — no manual "I completed the task" tap
-   * (Maze-style). Give-up stays an explicit action in the task sheet.
+   * navigation and, for Figma prototypes only, auto-completes when the
+   * screen is the current task's declared goal (Maze-style). HTML /
+   * live_url prototypes never auto-finish — participants must tap
+   * "I completed this task" in the task sheet, matching the web flow.
    */
   const onScreenChange = (screenId: string, source: 'webview' | 'frame') => {
     if (!screenId || screenId === currentScreenId.current) return;
@@ -173,6 +174,9 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
       taskId: activeTask?.id,
       meta: { prototypeScreenId: screenId, source, missionIndex: index },
     });
+    // Auto-goal is Figma-only. HTML has no reliable goal-screen signal, so
+    // success is always an explicit sheet action.
+    if (bootstrap?.prototype.type !== 'figma_proto') return;
     const goals = activeTask?.successScreenIds ?? [];
     if (activeTask && !autoCompletedRef.current && goals.includes(screenId)) {
       autoCompletedRef.current = true;
@@ -181,7 +185,7 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
         meta: { prototypeScreenId: screenId, source },
       });
       // The app detected the goal itself — the participant never taps
-      // "I completed the task". A modal offers the single next step
+      // "I completed this task". A modal offers the single next step
       // (next task, or finishing the session on the last one).
       setGoalReached(true);
     }
@@ -264,6 +268,10 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
   if (!task) return null;
   const uri = task.startUrl ?? bootstrap.prototype.entryUrl;
   const hasGoal = (task.successScreenIds?.length ?? 0) > 0;
+  // live_url / html_package: manual complete+give-up (web parity).
+  // figma_proto: auto-goal via successScreenIds; sheet only offers give-up.
+  const requiresManualComplete =
+    bootstrap.prototype.type === 'live_url' || bootstrap.prototype.type === 'html_package';
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]} edges={['top', 'bottom']}>
@@ -396,6 +404,14 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
         title={task.title}
         instruction={task.instruction}
         hasGoal={hasGoal}
+        onComplete={
+          requiresManualComplete
+            ? () => {
+                setTaskSheet(false);
+                void completeTask('completed');
+              }
+            : undefined
+        }
         onGiveUp={() => {
           setTaskSheet(false);
           completeTask('abandoned');
@@ -403,7 +419,7 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
         onDismiss={() => setTaskSheet(false)}
       />
 
-      {active && goalReached ? (
+      {active && !requiresManualComplete && goalReached ? (
         <GoalReachedModal
           taskIndex={index}
           taskTitle={task.title}

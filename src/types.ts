@@ -60,13 +60,13 @@ export interface TaskConfig {
   startUrl?: string;
   required: boolean;
   /**
-   * Screen id(s) that mark this task as successfully completed. When the
+   * Screen id(s) that mark this task as successfully completed. Used for
+   * Figma prototypes only (`figma_proto` / `figma_graph`): when the
    * prototype reaches any of them the task auto-completes (Maze-style) —
-   * the participant never taps "I completed the task". Ids are matched
-   * against the same screen signal used for analytics (WebView bridge hash
-   * for DOM/hosted prototypes; server-clustered frame `screenKey`). Omit
-   * for open-ended tasks (e.g. "explore the app"), which keep the manual
-   * Done? action.
+   * the participant never taps "I completed this task". Ids are matched
+   * against the same screen signal used for analytics (WebView bridge /
+   * frame cluster / graph nodeId). HTML / live_url tasks ignore this and
+   * always require the manual complete action in the task sheet.
    */
   successScreenIds?: string[];
 }
