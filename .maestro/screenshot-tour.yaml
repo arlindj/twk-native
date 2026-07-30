@@ -60,7 +60,7 @@ appId: com.tawakkalnaos.participate
 - takeScreenshot: 07-prototype-detail
 - tapOn: "Done?"
 - takeScreenshot: 08-task-sheet
-- tapOn: "I completed the task"
+- tapOn: "I completed this task"
 
 - extendedWaitUntil:
     visible: "Buy the product"
@@ -85,7 +85,7 @@ appId: com.tawakkalnaos.participate
     timeout: 10000
 - takeScreenshot: 10-prototype-success
 - tapOn: "Done?"
-- tapOn: "I completed the task"
+- tapOn: "I completed this task"
 
 - extendedWaitUntil:
     visible: "How easy was it to complete the checkout?"

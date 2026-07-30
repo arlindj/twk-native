@@ -78,4 +78,4 @@ appId: com.tawakkalnaos.participate
     visible: "Wireless Headphones"
     timeout: 10000
 - tapOn: "Done?"
-- tapOn: "I completed the task"
+- tapOn: "I completed this task"

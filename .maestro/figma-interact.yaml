@@ -23,7 +23,7 @@ appId: com.tawakkalnaos.participate
     optional: true
 - takeScreenshot: interact-final
 - tapOn: "Done?"
-- tapOn: "I completed the task"
+- tapOn: "I completed this task"
 - extendedWaitUntil:
     visible: "Would you use this app again?"
     timeout: 10000
