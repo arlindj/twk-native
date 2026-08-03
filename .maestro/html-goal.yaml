@@ -1,0 +1,120 @@
+# HTML-prototype goal auto-completion on device.
+#
+# This is the mobile half of the completion contract: an UPLOADED HTML prototype
+# (served by synth at /p/<id>) used to be manual-only here — the WebView loaded
+# the file without ?h=, so no tracker was injected, no completion signal existed,
+# and the participant always had to tap "I completed this task". With a goal set
+# on the Mission, the app now detects completion itself and shows
+# GoalReachedModal, exactly like a Figma study.
+#
+# What this asserts, and why each line matters:
+#   1. NO "I completed this task" control is offered  → requiresManualComplete is
+#      driven by detection, not by prototype type;
+#   2. "Task 1 complete" + "Nice work. The app spotted you reached the goal."
+#      appear after the goal interaction → GoalReachedModal, i.e. the signal
+#      reached the matcher;
+#   3. tapping Continue advances → the auto-complete records the outcome.
+#
+# PREREQS (this flow needs a real study — the local mock server predates the
+# synth study-content endpoint the app now calls):
+#   - a synth study whose prototype is an UPLOADED HTML file,
+#   - its first Mission has a completion goal set (Build tab → Edit the Mission →
+#     "Set goal…", or the Completion detection banner),
+#   - an invite code for it, pasted below in place of GOALDEMO,
+#   - Metro running and the app installed on the simulator/device.
+#
+# Run: maestro test .maestro/html-goal.yaml
+appId: com.tawakkalnaos.participate
+---
+- launchApp:
+    clearState: true
+
+# A stray OS "Open in app?" dialog can linger from a prior deep link; dismiss it.
+- tapOn:
+    text: "Cancel"
+    optional: true
+
+- tapOn: "Enter link manually"
+- tapOn: "Paste test link or code"
+- inputText: "GOALDEMO"
+- pressKey: Enter
+
+# --- Consent ---
+- extendedWaitUntil:
+    visible: "Before you start"
+    timeout: 20000
+- tapOn: "I agree and continue"
+
+# --- Guest intake ---
+- extendedWaitUntil:
+    visible: "About you"
+    timeout: 10000
+- tapOn: "Continue"
+
+# --- Recording (unavailable on most simulators — take either branch) ---
+- extendedWaitUntil:
+    visible: "Screen recording"
+    timeout: 10000
+- tapOn:
+    text: "Enable screen recording"
+    optional: true
+- tapOn:
+    text: "Continue without recording"
+    optional: true
+
+# --- Task 1 ---
+- extendedWaitUntil:
+    visible: "Start task"
+    timeout: 15000
+- tapOn: "Start task"
+
+# The prototype is live. Open the task sheet and assert the app is NOT asking the
+# participant to confirm completion — detection is on, so the sheet offers only
+# give-up. This is the assertion that would have failed before the goal contract.
+- extendedWaitUntil:
+    visible: "Task 1"
+    timeout: 20000
+# The floating task pill carries the task title; tapping it opens the sheet.
+- tapOn:
+    text: "Task 1"
+    optional: true
+- assertNotVisible: "I completed this task"
+- pressKey: Back
+
+# --- Reach the goal ---
+# Replace these taps with the authored goal's own path through YOUR prototype.
+# The dev prototype under server/prototype/ is the reference: dom-swap.html ends
+# on the order-confirmation screen, declared-goal.html on a data-synth-goal
+# button.
+- extendedWaitUntil:
+    visible: "Headphones"
+    timeout: 20000
+- tapOn: "Headphones"
+- extendedWaitUntil:
+    visible: "Add to cart"
+    timeout: 10000
+- tapOn: "Add to cart"
+- extendedWaitUntil:
+    visible: "Checkout"
+    timeout: 10000
+- tapOn: "Checkout"
+- extendedWaitUntil:
+    visible: "Pay €79"
+    timeout: 10000
+- tapOn: "Pay €79"
+
+# --- The app detected it, without any manual confirmation ---
+- extendedWaitUntil:
+    visible: "Task 1 complete"
+    timeout: 15000
+- assertVisible: "Nice work. The app spotted you reached the goal."
+- tapOn:
+    text: "Continue to next task"
+    optional: true
+- tapOn:
+    text: "Finish test"
+    optional: true
+
+# The outcome was recorded and the session moved on (a question block, the next
+# task's intro, or the wrap-up — whichever the study has next).
+- assertNotVisible: "Nice work. The app spotted you reached the goal."

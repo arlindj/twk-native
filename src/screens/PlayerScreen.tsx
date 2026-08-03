@@ -11,13 +11,24 @@ import { FloatingTaskControl } from '../components/FloatingTaskControl';
 import { TaskSheet } from '../components/TaskSheet';
 import { GoalReachedModal } from '../components/GoalReachedModal';
 import { sessionElapsedMs, track } from '../events/eventQueue';
+import {
+  matchesGoal,
+  parseGoalSignal,
+  screenIdFromKey,
+  screenKeyEquals,
+  type GoalSignal,
+  type ScreenKey,
+} from '../lib/goalMatch';
 import { shouldExcludeTapFromHeatmap } from '../lib/studyChrome';
 import { useSession } from '../state/sessionStore';
 import { spacing, type, useTheme } from '../theme';
 
 /**
  * Injected into the prototype WebView. Reports which prototype screen is
- * active, and viewport-normalized coordinates for every tap.
+ * active, viewport-normalized coordinates for every tap, and — for prototypes
+ * synth cannot instrument itself — the same `synth-signal` completion shape the
+ * injected tracker emits, so ONE matcher (src/lib/goalMatch.ts) decides
+ * completion for Figma, live URLs and uploaded HTML alike.
  *
  * Screen identity comes from two sources, in priority order:
  *  1. `node-id` in the URL query — Figma's proto viewer rewrites the URL
@@ -38,6 +49,12 @@ import { spacing, type, useTheme } from '../theme';
  *  3. Figma performs internal redirects after the initial load, and
  *     injectedJavaScript runs only on the first load — so the bridge is
  *     re-injected on every onLoadEnd, guarded against duplicates.
+ *
+ * `window.__synthTracker` is set by synth's own injected tracker (uploaded HTML
+ * loaded with ?h=&host=native). When it is present the bridge keeps reporting
+ * taps/screens for analytics but stays SILENT on completion — the tracker's
+ * signal is richer (authored screen names, full element fingerprints) and two
+ * sources could disagree on the same tap.
  */
 const PROTOTYPE_BRIDGE_JS = `
 (function () {
@@ -51,23 +68,103 @@ const PROTOTYPE_BRIDGE_JS = `
   function post(payload) {
     if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(payload));
   }
+  function owned() { return !window.__synthTracker; }
+  function norm(t) {
+    if (!t) return '';
+    return String(t).replace(/\\s+/g, ' ').replace(/^ | $/g, '').toLowerCase().slice(0, 80);
+  }
+  // ScreenKey for the goal matcher. The viewer's node-id / hash IS the authored
+  // screen name here, which is the matcher's highest-priority field — there is
+  // no DOM signature to compute for a canvas prototype.
+  function skey() {
+    return { path: location.pathname, hash: location.hash, sig: '', name: screenId() };
+  }
+  // Compact ElementFingerprint — the same selector priority the web tracker
+  // uses, minus the structural fallback (this bridge also runs on pages whose
+  // DOM we do not control, where a positional path is worthless).
+  function fp(raw) {
+    var sel = [], text = '', role = '', aria = '', goal = '';
+    // Selectors from the tapped element ONLY — an ancestor id would be the
+    // screen container's, and matching on it would fire for every tap on that
+    // screen.
+    try {
+      var tag0 = raw.tagName.toLowerCase();
+      var g0 = raw.getAttribute('data-synth-goal');
+      if (g0) { goal = String(g0).slice(0, 120); sel.push('[data-synth-goal="' + g0 + '"]'); }
+      var tid = raw.getAttribute('data-testid');
+      if (tid) sel.push('[data-testid="' + tid + '"]');
+      if (raw.id) sel.push('#' + raw.id);
+      var nm = raw.getAttribute('name');
+      if (nm) sel.push(tag0 + '[name="' + nm + '"]');
+      var al0 = raw.getAttribute('aria-label');
+      if (al0) { sel.push(tag0 + '[aria-label="' + al0 + '"]'); aria = al0; }
+    } catch (_) {}
+    // Text / role / aria walk up — a label often lives on a wrapper.
+    var el = raw, d = 0;
+    while (el && el.nodeType === 1 && d < 5) {
+      try {
+        var tag = el.tagName.toLowerCase();
+        if (!goal) { var g = el.getAttribute('data-synth-goal'); if (g) goal = String(g).slice(0, 120); }
+        if (!aria) { var al = el.getAttribute('aria-label'); if (al) aria = al; }
+        if (!role) role = (el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'button' ? 'button' : '')).toLowerCase();
+        if (!text) { var tx = el.innerText || el.textContent || ''; if (tx && tx.length <= 160) text = tx; }
+      } catch (_) {}
+      el = el.parentElement; d++;
+    }
+    var out = { sel: sel.slice(0, 8), text: norm(text) };
+    if (role) out.role = role;
+    if (aria) out.aria = norm(aria);
+    if (goal) out.goal = goal;
+    return out;
+  }
+  function signal(kind, el) {
+    if (!owned()) return;
+    var p = { type: 'synth-signal', v: 1, kind: kind, screen: skey(), ts: Date.now() };
+    if (el) p.el = el;
+    post(p);
+  }
+  // Screen NAVIGATION is reported only when we own the page. On an instrumented
+  // prototype the tracker's screen signal is authoritative (it can see authored
+  // names and DOM-only swaps this bridge can't), and reporting both would give
+  // analytics two different ids for the same screen.
+  function postScreen() {
+    if (!owned()) return;
+    post({ kind: 'screen', screenId: screenId() });
+  }
   document.addEventListener('touchstart', function (e) {
     var t = e.touches && e.touches[0];
     if (!t) return;
     var el = t.target && t.target.closest
-      ? t.target.closest('a,button,input,select,textarea,[onclick],[role="button"]')
+      ? t.target.closest('a,button,input,select,textarea,[onclick],[role="button"],[data-synth-goal]')
       : null;
     post({
       kind: 'tap',
-      screenId: screenId(),
+      // Same reason as postScreen: on an instrumented page the tracker owns
+      // screen identity, so the tap is left unlabelled and the native side tags
+      // it with the screen the tracker last reported.
+      screenId: owned() ? screenId() : undefined,
       nx: Math.max(0, Math.min(1, t.clientX / window.innerWidth)),
       ny: Math.max(0, Math.min(1, t.clientY / window.innerHeight)),
       interactive: !!el,
     });
+    if (t.target && t.target.nodeType === 1) signal('element', fp(el || t.target));
   }, true);
-  post({ kind: 'screen', screenId: screenId() });
+  // A prototype can also end the task itself (the declared convention).
+  window.addEventListener('message', function (e) {
+    try {
+      var d = e.data;
+      if (!d || d.type !== 'synth-task-complete') return;
+      if (!owned()) return;
+      var p = { type: 'synth-signal', v: 1, kind: 'declared', screen: skey(), ts: Date.now() };
+      if (typeof d.name === 'string') p.name = String(d.name).slice(0, 120);
+      post(p);
+    } catch (_) {}
+  });
+  postScreen();
+  signal('screen');
   window.addEventListener('hashchange', function () {
-    post({ kind: 'screen', screenId: screenId() });
+    postScreen();
+    signal('screen');
   });
   // Some viewers update the URL via history.replaceState (no event) — poll.
   var lastScreen = screenId();
@@ -75,7 +172,8 @@ const PROTOTYPE_BRIDGE_JS = `
     var s = screenId();
     if (s !== lastScreen) {
       lastScreen = s;
-      post({ kind: 'screen', screenId: s });
+      postScreen();
+      signal('screen');
     }
   }, 400);
 })();
@@ -142,6 +240,13 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
   // screen can arrive from both signal sources (bridge + frame) and taps
   // can keep coming during the confirmation flash.
   const autoCompletedRef = useRef(false);
+  // The screen the task STARTED on. A screen-matcher hit only counts once the
+  // prototype has actually moved off it — otherwise a goal that happens to
+  // describe the entry screen would complete the task the instant it begins.
+  const armScreenRef = useRef<ScreenKey | null>(null);
+  const lastScreenKeyRef = useRef<ScreenKey | null>(null);
+  // Element hit waiting for its screen transition (see onGoalSignal).
+  const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear pending timers on unmount — this screen is torn down between tasks
   // (task_questions) and a capture firing after that would post a frame
@@ -150,18 +255,42 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
     () => () => {
       if (captureTimer.current) clearTimeout(captureTimer.current);
       if (readyTimer.current) clearTimeout(readyTimer.current);
+      if (graceTimer.current) clearTimeout(graceTimer.current);
     },
     [],
   );
+
+  // The task just went live on a (possibly long) preloaded WebView: whatever
+  // screen it is showing right now is this task's entry screen.
+  useEffect(() => {
+    if (!active) return;
+    armScreenRef.current = lastScreenKeyRef.current;
+  }, [active]);
+
+  /** Records the auto-completion once and shows the confirmation modal. */
+  const reachGoal = (meta: Record<string, string | number | boolean>) => {
+    const activeTask = bootstrap?.tasks[index];
+    if (!activeTask || autoCompletedRef.current) return;
+    autoCompletedRef.current = true;
+    if (graceTimer.current) clearTimeout(graceTimer.current);
+    track('task_goal_reached', { taskId: activeTask.id, meta });
+    // The app detected the goal itself — the participant never taps
+    // "I completed this task". A modal offers the single next step
+    // (next task, or finishing the session on the last one).
+    setGoalReached(true);
+  };
 
   /**
    * Single choke point for every prototype screen change, from either
    * signal source: the WebView hash bridge (DOM/hosted prototypes) or a
    * server-clustered frame `screenKey` (canvas prototypes). Records the
-   * navigation and, for Figma prototypes only, auto-completes when the
-   * screen is the current task's declared goal (Maze-style). HTML /
-   * live_url prototypes never auto-finish — participants must tap
-   * "I completed this task" in the task sheet, matching the web flow.
+   * navigation and, for CANVAS (Figma) prototypes, auto-completes on the task's
+   * declared success screen id.
+   *
+   * Structured goals (uploaded HTML, and any prototype the bridge can
+   * fingerprint) do NOT come through here — they run through onGoalSignal and
+   * the shared matcher, which knows about element fingerprints, authored screen
+   * names and the entry-screen guard that a bare screen id can't express.
    */
   const onScreenChange = (screenId: string, source: 'webview' | 'frame') => {
     if (!screenId || screenId === currentScreenId.current) return;
@@ -174,21 +303,62 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
       taskId: activeTask?.id,
       meta: { prototypeScreenId: screenId, source, missionIndex: index },
     });
-    // Auto-goal is Figma-only. HTML has no reliable goal-screen signal, so
-    // success is always an explicit sheet action.
+    // successScreenIds is the canvas-prototype path: frame clustering yields a
+    // screen KEY and nothing else, so there is no signal to match on.
     if (bootstrap?.prototype.type !== 'figma_proto') return;
     const goals = activeTask?.successScreenIds ?? [];
-    if (activeTask && !autoCompletedRef.current && goals.includes(screenId)) {
-      autoCompletedRef.current = true;
-      track('task_goal_reached', {
-        taskId: activeTask.id,
-        meta: { prototypeScreenId: screenId, source },
-      });
-      // The app detected the goal itself — the participant never taps
-      // "I completed this task". A modal offers the single next step
-      // (next task, or finishing the session on the last one).
-      setGoalReached(true);
+    if (goals.includes(screenId)) reachGoal({ prototypeScreenId: screenId, source });
+  };
+
+  /**
+   * The structured completion path: a `synth-signal` from synth's injected
+   * tracker (uploaded HTML) or from PROTOTYPE_BRIDGE_JS (everything else),
+   * evaluated by the SAME matcher the web tester flow uses.
+   *
+   * The guards, in order:
+   *  - nothing counts before the task is active (the WebView preloads during
+   *    task_intro, and this screen is remounted per task, so no signal can leak
+   *    across task boundaries);
+   *  - the first screen seen after arming IS the entry screen, and a screen hit
+   *    must be a real move away from it;
+   *  - an element hit on a goal that ALSO names a screen waits up to 1200ms for
+   *    that transition, then completes anyway — a transition animation must not
+   *    swallow the completion, and a stuck screen must not hang the task.
+   */
+  const onGoalSignal = (sig: GoalSignal) => {
+    lastScreenKeyRef.current = sig.screen;
+    if (!activeRef.current) return;
+    const activeTask = bootstrap?.tasks[index];
+    const goal = activeTask?.goal;
+    if (!activeTask || !goal || autoCompletedRef.current) return;
+
+    if (!armScreenRef.current) {
+      armScreenRef.current = sig.screen;
+      if (sig.kind === 'screen') return;
     }
+
+    const hit = matchesGoal(goal, sig);
+    if (!hit) return;
+
+    if (hit.kind === 'screen' || hit.kind === 'url') {
+      if (screenKeyEquals(armScreenRef.current, sig.screen)) return;
+      reachGoal({ prototypeScreenId: screenIdFromKey(sig.screen), source: 'signal', via: hit.kind });
+      return;
+    }
+    const wantsScreen = goal.any.some((m) => m.kind === 'screen' || m.kind === 'url');
+    if (!wantsScreen) {
+      reachGoal({ prototypeScreenId: screenIdFromKey(sig.screen), source: 'signal', via: hit.kind });
+      return;
+    }
+    if (graceTimer.current) return;
+    graceTimer.current = setTimeout(() => {
+      graceTimer.current = null;
+      reachGoal({
+        prototypeScreenId: screenIdFromKey(sig.screen),
+        source: 'signal',
+        via: `${hit.kind}-timeout`,
+      });
+    }, 1200);
   };
 
   // Frames are captured for EVERY prototype type — heatmaps are built for
@@ -267,11 +437,18 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
   const task = bootstrap.tasks[index];
   if (!task) return null;
   const uri = task.startUrl ?? bootstrap.prototype.entryUrl;
-  const hasGoal = (task.successScreenIds?.length ?? 0) > 0;
-  // live_url / html_package: manual complete+give-up (web parity).
-  // figma_proto: auto-goal via successScreenIds; sheet only offers give-up.
-  const requiresManualComplete =
-    bootstrap.prototype.type === 'live_url' || bootstrap.prototype.type === 'html_package';
+  // A task can auto-complete two ways: a structured goal (any prototype that can
+  // emit a synth-signal, including uploaded HTML) or, for canvas prototypes,
+  // a declared success screen id matched from clustered frames.
+  const hasStructuredGoal = !!task.goal;
+  const hasScreenIdGoal =
+    bootstrap.prototype.type === 'figma_proto' && (task.successScreenIds?.length ?? 0) > 0;
+  const hasGoal = hasStructuredGoal || hasScreenIdGoal;
+  // Detection drives the UI, not the prototype TYPE: with a goal the app
+  // confirms completion itself (GoalReachedModal) exactly like Figma does;
+  // without one the task sheet keeps its manual "I completed this task", which
+  // is also the web flow's behaviour for a free-explore mission.
+  const requiresManualComplete = !hasGoal;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.paper }]} edges={['top', 'bottom']}>
@@ -325,6 +502,7 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
             }}
             onMessage={(e) => {
               let msg: {
+                type?: string;
                 kind?: string;
                 screenId?: string;
                 nx?: number;
@@ -334,6 +512,20 @@ export function PlayerScreen({ active = true }: { active?: boolean }) {
               try {
                 msg = JSON.parse(e.nativeEvent.data);
               } catch {
+                return;
+              }
+              // Completion contract (see src/lib/goalMatch.ts) — from synth's
+              // injected tracker on uploaded HTML, or from the bridge otherwise.
+              if (msg.type === 'synth-signal') {
+                const sig = parseGoalSignal(msg);
+                if (sig) {
+                  onGoalSignal(sig);
+                  // A tracker screen signal is also a navigation for analytics;
+                  // the bridge reports those separately as kind:'screen'.
+                  if (sig.kind === 'screen') {
+                    onScreenChange(screenIdFromKey(sig.screen), 'webview');
+                  }
+                }
                 return;
               }
               if (msg.kind === 'screen' && msg.screenId) {

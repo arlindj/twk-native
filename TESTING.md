@@ -117,6 +117,34 @@ maestro test .maestro/full-session.yaml
 Pas ekzekutimit, kontrollo `http://localhost:4000` — sesioni shfaqet i kompletuar me
 taps + answers.
 
+### 1g. Unit tests (matcher-i i goal-it)
+
+```bash
+npm test        # tsx + node:test — no jest / no RN build step
+```
+
+Mbulon `src/lib/goalMatch.ts` — matcher-i që vendos kur një task auto-kompletohet.
+Ai file është **mirror i dorës** i `packages/types/src/goal.ts` në repo-n e web-it
+(kjo app nuk mund të importojë atë package). Fixtures-at në
+`src/lib/goalMatch.test.ts` janë **të njëjtat** me `tests/usability/goal-matcher.test.ts`
+në synth: nëse dy implementimet divergojnë, një nga dy suite-t bie. Kur ndryshon
+kontrata, ndrysho dy files-at bashkë dhe rrit `v`.
+
+### 1h. Auto-completion për prototipe HTML
+
+`.maestro/html-goal.yaml` verifikon që një Mission me `config.goal` auto-kompletohet
+në app (GoalReachedModal) pa "I completed this task". Kërkon një study real në synth
+me prototip HTML të uploaduar + goal të vendosur (Build tab → Edit Mission →
+"Set goal…"); prereqs-at e plota janë në kokë të file-it.
+
+Prototipet e dev-it që mbulojnë rastet e vështira:
+
+| File | Rasti |
+|------|-------|
+| `server/prototype/index.html` | ekrane me hash (`#cart`, `#done`) |
+| `server/prototype/dom-swap.html` | swap në DOM, URL-ja **nuk ndryshon** — `data-synth-screen` + DOM signature |
+| `server/prototype/declared-goal.html` | `data-synth-goal` + `postMessage({type:"synth-task-complete"})` |
+
 ---
 
 ## 2. Testim me njerëz të tjerë (beta) — si Maze para launch-it

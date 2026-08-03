@@ -6,6 +6,7 @@ import { FloatingTaskControl } from '../components/FloatingTaskControl';
 import { TaskSheet } from '../components/TaskSheet';
 import { GoalReachedModal } from '../components/GoalReachedModal';
 import { track } from '../events/eventQueue';
+import { matchesGoal, type TaskGoal } from '../lib/goalMatch';
 import { useSession } from '../state/sessionStore';
 import { spacing, type, useTheme } from '../theme';
 import { GraphHotspot, GraphScreen } from '../types';
@@ -51,7 +52,24 @@ export function GraphPlayerScreen() {
   if (!task) return null;
   const screen = screensByNode.get(currentNodeId);
   const hotspots: GraphHotspot[] = graph.hotspots.filter((h) => h.screenNodeId === currentNodeId);
-  const hasGoal = (task.successScreenIds?.length ?? 0) > 0;
+  /**
+   * One matcher for both authoring paths: a structured `config.goal`, or the
+   * legacy `successScreenIds` lifted into screen matchers on the node id. A
+   * graph screen's identity IS its node id, which maps onto the contract's
+   * authored `name` field — so the shared matcher (and its entry-screen guard)
+   * applies here unchanged instead of a bespoke `includes` check.
+   */
+  const goal: TaskGoal | null =
+    task.goal ??
+    ((task.successScreenIds?.length ?? 0) > 0
+      ? {
+          v: 1,
+          label: task.successScreenIds![0]!,
+          any: task.successScreenIds!.map((id) => ({ kind: 'screen' as const, name: id })),
+          entryScreen: { path: '', hash: '', sig: '', name: graph.startNodeId },
+        }
+      : null);
+  const hasGoal = !!goal;
 
   const layoutWidth = deviceWidth;
   const layoutHeight = screen && screen.width > 0 ? layoutWidth * (screen.height / screen.width) : 0;
@@ -65,8 +83,16 @@ export function GraphPlayerScreen() {
       taskId: task.id,
       meta: { prototypeScreenId: nodeId, source: 'graph', missionIndex: index },
     });
-    const goals = task.successScreenIds ?? [];
-    if (!autoCompletedRef.current && goals.includes(nodeId)) {
+    const hit =
+      goal &&
+      matchesGoal(goal, {
+        type: 'synth-signal',
+        v: 1,
+        kind: 'screen',
+        screen: { path: '', hash: '', sig: '', name: nodeId },
+        ts: Date.now(),
+      });
+    if (hit && !autoCompletedRef.current) {
       autoCompletedRef.current = true;
       track('task_goal_reached', { taskId: task.id, meta: { prototypeScreenId: nodeId, source: 'graph' } });
       // Goal detected by the app — the modal offers the next step instead of

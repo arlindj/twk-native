@@ -5,5 +5,8 @@
     "types": []
   },
   "include": ["index.js", "src/**/*", "modules/**/*"],
-  "exclude": ["node_modules", "ios", "android", "server"]
+  // *.test.ts runs under node's built-in test runner (`npm test`), not in the RN
+  // runtime — it imports node: builtins this project deliberately has no types
+  // for, so it stays out of the app's typecheck.
+  "exclude": ["node_modules", "ios", "android", "server", "src/**/*.test.ts"]
 }
