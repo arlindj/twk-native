@@ -23,6 +23,7 @@ import {
   StartSessionResponse,
   TaskConfig,
 } from '../types';
+import type { TaskGoal } from '../lib/goalMatch';
 import { shouldExcludeTapFromHeatmap } from '../lib/studyChrome';
 
 /**
@@ -212,6 +213,47 @@ function translateQuestionPrompt(p: SynthPrompt, afterTaskId: string | undefined
   }
 }
 
+/**
+ * Is this an UPLOADED HTML prototype (synth serves it from /p/<prototype_id>)?
+ *
+ * It matters for two reasons: that route is the only prototype synth can inject
+ * the tracker into (so it is the only one that can auto-complete a task), and the
+ * injection is opt-in via query params — see instrumentPrototypeUrl.
+ */
+function isUploadedHtmlUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.startsWith('/p/');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Turns an uploaded-HTML prototype URL into an INSTRUMENTED one.
+ *
+ * `?h=<sessionId>` is what makes synth's /p route inject its tracker at all —
+ * without it the WebView loads plain HTML and the app sees no clicks, no screen
+ * changes and no completion signal (which is exactly why HTML tasks used to be
+ * manual-only on mobile). `host=native` then tells that tracker to skip its own
+ * /api/human-beats and /api/human-base posts: this app already ships those
+ * events through its authenticated queue (posting twice would double the
+ * heatmap), and a WebView carries no auth cookie so they would 401 anyway.
+ */
+function instrumentPrototypeUrl(url: string, sessionId: string): string {
+  if (!isUploadedHtmlUrl(url)) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}h=${encodeURIComponent(sessionId)}&host=native`;
+}
+
+/** The Mission's completion goal, when the study author set one. */
+function translateGoal(config: unknown): TaskGoal | undefined {
+  const goal = (config as { goal?: TaskGoal } | null)?.goal;
+  // `v: 1` is the drift guard against synth's packages/types/src/goal.ts — an
+  // unknown version means "don't auto-complete", never "guess".
+  if (!goal || goal.v !== 1 || !Array.isArray(goal.any) || goal.any.length === 0) return undefined;
+  return goal;
+}
+
 function translateBootstrap(sessionId: string, raw: SynthStudyContent): BootstrapPayload {
   const protoById = new Map(raw.prototypes.map((p) => [p.id, p]));
   const defaultProto = raw.prototypes[0];
@@ -247,9 +289,13 @@ function translateBootstrap(sessionId: string, raw: SynthStudyContent): Bootstra
     };
   } else if (defaultProto) {
     prototype = {
-      type: defaultProto.is_figma_embed ? 'figma_proto' : 'live_url',
+      type: defaultProto.is_figma_embed
+        ? 'figma_proto'
+        : isUploadedHtmlUrl(defaultProto.prototype_url)
+          ? 'html_package'
+          : 'live_url',
       platform: 'mobile_app',
-      entryUrl: defaultProto.prototype_url,
+      entryUrl: instrumentPrototypeUrl(defaultProto.prototype_url, sessionId),
       viewport: { width: 390, height: 844 },
     };
   } else {
@@ -271,9 +317,13 @@ function translateBootstrap(sessionId: string, raw: SynthStudyContent): Bootstra
         id: p.id,
         title: p.title,
         instruction: p.description ?? '',
-        startUrl: proto && !raw.graph.ready ? proto.prototype_url : undefined,
+        startUrl:
+          proto && !raw.graph.ready
+            ? instrumentPrototypeUrl(proto.prototype_url, sessionId)
+            : undefined,
         required: true,
         successScreenIds: p.expected_success_screen ? [p.expected_success_screen] : undefined,
+        goal: translateGoal(p.config),
       });
       lastMissionId = p.id;
     } else {

@@ -1,0 +1,104 @@
+# One-shot E2E for HTML goal auto-completion (report screenshots).
+# Resume-safe: no clearState (Xcode 26 setPermissions flaky). Loop advances
+# whatever gate is currently on screen until Start task.
+appId: com.tawakkalnaos.participate.dev
+---
+- launchApp:
+    clearState: false
+    stopApp: true
+
+- tapOn:
+    text: "Cancel"
+    optional: true
+
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/01-home
+
+- openLink: "twk://t/7413AFE7?api=http://localhost:3000/api"
+
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/02-preparing
+
+- repeat:
+    while:
+      notVisible: "Start task"
+    times: 50
+    commands:
+      - runFlow:
+          when:
+            visible: "Before you start"
+          commands:
+            - takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/03-consent
+            - tapOn: "I agree and continue"
+      - runFlow:
+          when:
+            visible: "About you"
+          commands:
+            - takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/04-intake
+            - tapOn: "e.g. Sara Ahmed"
+            - inputText: "E2E Mobile"
+            - pressKey: Enter
+            - tapOn: "Continue"
+      - runFlow:
+          when:
+            visible: "Enable screen recording"
+          commands:
+            - takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/05-recording
+            - tapOn: "Enable screen recording"
+      - runFlow:
+          when:
+            visible: "Continue without recording"
+          commands:
+            - tapOn: "Continue without recording"
+      - waitForAnimationToEnd
+
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/06-task-intro
+- tapOn: "Start task"
+
+- extendedWaitUntil:
+    visible: "Headphones"
+    timeout: 60000
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/07-prototype-home
+
+- tapOn:
+    text: "Task 1"
+    optional: true
+- assertNotVisible: "I completed this task"
+- pressKey:
+    key: Back
+    optional: true
+- tapOn:
+    text: "Close"
+    optional: true
+
+- tapOn: "Headphones"
+- extendedWaitUntil:
+    visible: "Add to cart"
+    timeout: 20000
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/08-product
+- tapOn: "Add to cart"
+
+- extendedWaitUntil:
+    visible: "Checkout"
+    timeout: 20000
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/09-cart
+- tapOn: "Checkout"
+
+- extendedWaitUntil:
+    visible: "Pay €79"
+    timeout: 20000
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/10-checkout
+- tapOn: "Pay €79"
+
+- extendedWaitUntil:
+    visible: "Task 1 complete"
+    timeout: 30000
+- assertVisible: "Nice work. The app spotted you reached the goal."
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/11-goal-reached
+
+- tapOn:
+    text: "Finish test"
+    optional: true
+- tapOn:
+    text: "Continue to next task"
+    optional: true
+
+- takeScreenshot: /Users/arlindjashari/Downloads/html-goal-flow-report/shots/mobile/12-after-continue

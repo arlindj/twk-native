@@ -5,6 +5,8 @@
  * returns raw evidence (recording, taps, answers, device context).
  */
 
+import type { TaskGoal } from './lib/goalMatch';
+
 export type Platform = 'ios' | 'android';
 
 export interface PrototypeConfig {
@@ -60,15 +62,24 @@ export interface TaskConfig {
   startUrl?: string;
   required: boolean;
   /**
-   * Screen id(s) that mark this task as successfully completed. Used for
-   * Figma prototypes only (`figma_proto` / `figma_graph`): when the
-   * prototype reaches any of them the task auto-completes (Maze-style) —
-   * the participant never taps "I completed this task". Ids are matched
-   * against the same screen signal used for analytics (WebView bridge /
-   * frame cluster / graph nodeId). HTML / live_url tasks ignore this and
-   * always require the manual complete action in the task sheet.
+   * Screen id(s) that mark this task as successfully completed — the Figma
+   * path (`figma_proto` / `figma_graph`), matched against the screen signal
+   * analytics already uses (WebView bridge node-id / frame cluster / graph
+   * nodeId). Reaching one auto-completes the task (Maze-style) and the
+   * participant never taps "I completed this task".
    */
   successScreenIds?: string[];
+  /**
+   * The versioned completion goal (see src/lib/goalMatch.ts) — element and/or
+   * screen matchers evaluated against the `synth-signal` stream the prototype
+   * emits. This is what lets an UPLOADED HTML prototype auto-complete: it is a
+   * single self-contained file whose pathname never changes, so a screen id
+   * alone could never detect completion and HTML tasks used to be manual-only.
+   *
+   * When a task has a goal the player auto-completes exactly like Figma does;
+   * when it doesn't, the task sheet keeps its manual "I completed this task".
+   */
+  goal?: TaskGoal;
 }
 
 export type QuestionType =

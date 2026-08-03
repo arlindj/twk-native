@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Shop Prototype — declared goal</title>
+<!--
+  The EASY case, and the one a prototype author should reach for: the prototype
+  declares completion itself, so detection needs no fingerprinting and survives
+  any amount of markup churn.
+
+  Two supported conventions, both exercised here:
+    1. `data-synth-goal="<name>"` on the control that ends the task — the tracker
+       reports it on the tap and a `declared` matcher fires.
+    2. `postMessage({type:"synth-task-complete", name})` to the parent window —
+       the opt-in for a live site we can't instrument, shown here on the timed
+       confirmation so the message path is covered too.
+-->
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: system-ui; background:#fff; color:#101828; }
+  .screen { display:none; min-height:100vh; flex-direction:column; }
+  .screen.active { display:flex; }
+  header { padding:18px 20px; font-weight:800; font-size:20px; border-bottom:1px solid #eee; }
+  .pad { padding:20px; flex:1; }
+  .btn { display:block; width:calc(100% - 40px); margin:0 20px 20px; padding:16px; border:0;
+    border-radius:12px; background:#0B7A4B; color:#fff; font-size:16px; font-weight:700; }
+  .success { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+  .success .check { width:84px; height:84px; border-radius:50%; background:#0B7A4B; color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:40px; }
+</style>
+</head>
+<body>
+  <div class="screen active" id="home">
+    <header>Support</header>
+    <div class="pad">
+      <p>Your order #4021 arrived damaged.</p>
+    </div>
+    <button class="btn" onclick="go('form')">Report a problem</button>
+  </div>
+
+  <div class="screen" id="form">
+    <header>Report a problem</header>
+    <div class="pad">
+      <p>Tell us what happened and we'll arrange a replacement.</p>
+    </div>
+    <!-- (1) The declared convention: this attribute IS the goal. -->
+    <button class="btn" data-synth-goal="refund-requested" onclick="go('done')">
+      Request a replacement
+    </button>
+  </div>
+
+  <div class="screen" id="done">
+    <div class="success">
+      <div class="check">✓</div>
+      <h2>Replacement on its way</h2>
+    </div>
+  </div>
+
+<script>
+  function go(id) {
+    document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
+    document.getElementById(id).classList.add('active');
+    // (2) The postMessage convention — the same completion, announced by the
+    // prototype rather than inferred from the tap.
+    if (id === 'done') {
+      try {
+        parent.postMessage({ type: 'synth-task-complete', name: 'refund-requested' }, '*');
+      } catch (e) {}
+    }
+  }
+</script>
+</body>
+</html>

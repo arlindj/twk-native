@@ -6,7 +6,8 @@
     "start": "react-native start",
     "android": "react-native run-android",
     "ios": "react-native run-ios",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npx --yes tsx --test src/lib/goalMatch.test.ts"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
